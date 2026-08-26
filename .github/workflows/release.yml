@@ -1,0 +1,130 @@
+name: Build & Auto Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'ملاحظات التحديث (Release Notes):'
+        required: false
+        default: '• تحديثات عامة وتحسينات في الأداء.'
+      force_update:
+        description: 'هل التحديث إجباري؟ (Force Update)'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0' # or channel: 'stable'
+          channel: 'stable'
+          cache: true
+
+      - name: Extract Version from pubspec.yaml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version: ' pubspec.yaml | sed 's/version: //; s/+.*//' | tr -d '\r')
+          BUILD_NUMBER=$(grep '^version: ' pubspec.yaml | sed 's/.*+//' | tr -d '\r')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "Version: $VERSION, Build: $BUILD_NUMBER"
+
+      - name: Setup Keystore & Signing Config
+        run: |
+          mkdir -p android/app
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/my-release-key.jks
+          fi
+          
+          if [ -n "${{ secrets.KEY_PROPERTIES }}" ]; then
+            echo "${{ secrets.KEY_PROPERTIES }}" > android/key.properties
+          else
+            cat <<EOF > android/key.properties
+          storePassword=${{ secrets.STORE_PASSWORD || 'Nova0566#' }}
+          keyPassword=${{ secrets.KEY_PASSWORD || 'Nova0566#' }}
+          keyAlias=${{ secrets.KEY_ALIAS || 'my-key-alias' }}
+          storeFile=my-release-key.jks
+          EOF
+          fi
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Set Release Tag & Notes
+        id: release_meta
+        run: |
+          TAG_NAME="v${{ env.VERSION }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            NOTES="${{ github.event.inputs.release_notes }}"
+            FORCE_UPDATE="${{ github.event.inputs.force_update }}"
+          else
+            NOTES="• إصدار جديد v${{ env.VERSION }}"
+            FORCE_UPDATE="false"
+          fi
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "NOTES=$NOTES" >> $GITHUB_ENV
+          echo "FORCE_UPDATE=$FORCE_UPDATE" >> $GITHUB_ENV
+
+      - name: Create GitHub Release & Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: "إصدار ${{ env.TAG_NAME }}"
+          body: ${{ env.NOTES }}
+          draft: false
+          prerelease: false
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version.json Automatically
+        run: |
+          APK_DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ env.TAG_NAME }}/app-release.apk"
+          TODAY=$(date +'%Y-%m-%d')
+          
+          cat <<EOF > version.json
+          {
+            "latest_version": "${{ env.VERSION }}",
+            "build_number": ${{ env.BUILD_NUMBER }},
+            "apk_url": "$APK_DOWNLOAD_URL",
+            "release_notes": "${{ env.NOTES }}",
+            "force_update": ${{ env.FORCE_UPDATE }},
+            "publish_date": "$TODAY"
+          }
+          EOF
+
+      - name: Commit & Push updated version.json
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          git commit -m "Auto-update version.json to v${{ env.VERSION }}+${{ env.BUILD_NUMBER }} [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:${{ github.ref_name }} || git push origin main || echo "Push skipped"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

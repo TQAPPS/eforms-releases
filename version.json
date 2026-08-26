@@ -1,8 +1,8 @@
-﻿{
+{
   "latest_version": "1.0.6",
   "build_number": 7,
   "apk_url": "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk",
-  "release_notes": "Release v1.0.6 with latest features and optimizations.",
+  "release_notes": "✨ أبرز ما تم في هذا التحديث:\n\n🚀 التحديثات والنظام:\n• تثبيت عرض رقم الإصدار بشكل شفاف وأنيق أسفل الشاشة الرئيسية.\n• تحسين مسار تنزيل وتثبيت الـ APK لضمان التوافق التام مع كافة هواتف أندرويد.\n• تسريع آلية التحميل المباشر للـ APK من مستودع المنشأة.\n\n📋 النماذج والتقارير:\n• تحسين أداء استجابة النماذج الإلكترونية وتوليد تقارير PDF الرسمية.\n• تحسينات شاملة على استقرار وثبات التطبيق وسرعة المعالجة.",
   "force_update": false,
   "publish_date": "2026-08-27"
 }

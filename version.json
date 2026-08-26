@@ -1,8 +1,8 @@
-{
-  "latest_version": "1.0.5",
-  "build_number": 6,
+﻿{
+  "latest_version": "1.0.6",
+  "build_number": 7,
   "apk_url": "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk",
-  "release_notes": "✨ أبرز المميزات والإضافات في هذا التحديث:\n\n🚀 نظام التحديث الذاتي التلقائي:\n• إضافة التحديث المباشر من داخل التطبيق بدون الحاجة لمتجر Google Play.\n• شريط تقدم التحميل في الوقت الفعلي مع التثبيت التلقائي للـ APK.\n• إظهار رقم الإصدار المثبت بشكل هادئ وشفاف أسفل الشاشة الرئيسية.\n\n📋 منظومة النماذج الذكية المتكاملة:\n• نموذج صيانة الشبكة والجهد العالي (Monthly Inspection Power Transformer).\n• نموذج قائمة الفحص لمحطات التحويل (Checklist Substation Power Transformer).\n• نموذج سحب وفحص عينات الزيت (Oil Sampling Inspection Form).\n\n📄 تصدير تقارير PDF والاعتمادات:\n• تحسين محرك توليد وتصدير ملفات PDF بجودة فائقة وتنسيق رسمي معتمد.\n• دعم التوقيع الرقمي، الاعتمادات الإدارية، والحفظ والمشاركة الفورية.\n\n🎨 واجهة المستخدم والأداء:\n• دعم كامل للثيم الفاتح والداكن (Dark & Light Mode) مع خط كوفي/كايرو.\n• تفعيل محرك البحث السريع لتصفية النماذج والمعاملات بسهولة.\n• تحسينات شاملة على ثبات واستقرار التطبيق وسرعة المعالجة.",
+  "release_notes": "Release v1.0.6 with latest features and optimizations.",
   "force_update": false,
   "publish_date": "2026-08-27"
 }

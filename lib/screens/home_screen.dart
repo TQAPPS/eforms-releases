@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/form_model.dart';
 import '../models/substation_model.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'grid_maintenance_screen.dart';
 import 'oil_sampling_screen.dart';
 import 'transformer_checklist_screen.dart';
@@ -23,14 +24,27 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
+    _loadAppVersion();
     // فحص التحديثات المتاحة تلقائياً عند فتح التطبيق
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppUpdateService.checkForUpdates(context);
     });
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v${info.version} (${info.buildNumber})';
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -1867,6 +1881,28 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
+
+                    // Subtle Transparent App Version Footer
+                    if (_appVersion.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 20.0, top: 4.0),
+                          child: Center(
+                            child: Opacity(
+                              opacity: 0.35,
+                              child: Text(
+                                'الإصدار $_appVersion',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.3,
+                                  color: isDark ? Colors.white70 : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

@@ -1881,28 +1881,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-
-                    // Subtle Transparent App Version Footer
-                    if (_appVersion.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 20.0, top: 4.0),
-                          child: Center(
-                            child: Opacity(
-                              opacity: 0.35,
-                              child: Text(
-                                'الإصدار $_appVersion',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w500,
-                                  letterSpacing: 0.3,
-                                  color: isDark ? Colors.white70 : Colors.black87,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -1910,6 +1888,29 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
+      bottomNavigationBar: _appVersion.isNotEmpty
+          ? SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8.0, top: 4.0),
+                child: Center(
+                  heightFactor: 1.0,
+                  child: Opacity(
+                    opacity: 0.35,
+                    child: Text(
+                      'الإصدار $_appVersion',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.3,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 

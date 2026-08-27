@@ -1,8 +1,8 @@
-﻿{
+{
   "latest_version": "1.0.7",
   "build_number": 8,
   "apk_url": "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk",
-  "release_notes": "Release v1.0.7 with latest features and optimizations.",
+  "release_notes": "✨ أبرز ما تم في تحديث الإصدار v1.0.7:\n\n🚀 التحديثات والنظام:\n• ترقية التوقيع الرقمي بنسخة الإنتاج الرسمية لضمان التثبيت المباشر بنقرة واحدة.\n• تحسين مسار تحميل حزم التثبيت في ذاكرة التخزين المتوافقة مع أندرويد.\n• ثبات عملية التحقق وتنزيل التحديثات المباشرة بسرعة فائقة.\n\n📋 النماذج والتقارير:\n• تحسين أداء استجابة النماذج الإلكترونية وتوليد تقارير الـ PDF.\n• تحسينات عامة على ثبات وسرعة التطبيق.",
   "force_update": false,
   "publish_date": "2026-08-27"
 }

@@ -1,8 +1,8 @@
-﻿{
+{
   "latest_version": "1.0.8",
   "build_number": 9,
   "apk_url": "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk",
-  "release_notes": "Release v1.0.8 with latest features and optimizations.",
+  "release_notes": "✨ أبرز ما تم في تحديث الإصدار v1.0.8:\n\n🎨 تحسينات الواجهة والتصميم:\n• توسيط وتنظيف عنوان الشاشة الرئيسية لتصميم عصري وبسيط (Clean & Minimalist).\n• إضافة القائمة الجانبية الذكية (Side Drawer) والوصول إليها عبر زر 3 شرطات.\n• نقل مفتاح الوضع الليلي والفاتح وخيار فحص التحديثات إلى القائمة الجانبية لتنظيم أفضل.\n\n🚀 الأداء والنظام:\n• تحسين استقرار وسرعة تنزيل وتثبيت التحديثات المباشرة.\n• تحسينات شاملة على سرعة الاستجابة وثبات التطبيق.",
   "force_update": false,
   "publish_date": "2026-08-27"
 }

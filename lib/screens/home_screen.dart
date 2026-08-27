@@ -22,6 +22,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   String _appVersion = '';
@@ -1608,62 +1609,22 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
 
     return Scaffold(
+      key: _scaffoldKey,
+      endDrawer: _buildSideDrawer(context, isDark),
       appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.dynamic_form_rounded,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'منظومة النماذج الإلكترونية',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'التحول الرقمي للنماذج والمعاملات الورقية',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.normal,
-                      color: Colors.grey,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
+        centerTitle: true,
+        title: Text(
+          'منظومة النماذج الإلكترونية',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
+          ),
         ),
         actions: [
-          // Check for Updates Button
+          // 3-Bars Menu Button to open sleek Side Drawer
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: isDark
                   ? const Color(0xFF1E293B)
@@ -1676,71 +1637,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             child: IconButton(
-              tooltip: 'التحقق من وجود تحديثات',
+              tooltip: 'القائمة الجانبية',
               icon: const Icon(
-                Icons.system_update_alt_rounded,
-                size: 20,
+                Icons.menu_rounded,
+                size: 22,
               ),
               onPressed: () {
-                AppUpdateService.checkForUpdates(
-                  context,
-                  showNoUpdateMessage: true,
-                );
+                _scaffoldKey.currentState?.openEndDrawer();
               },
             ),
           ),
-
-          // Theme Switcher Button (Dark / Light toggle)
-          ValueListenableBuilder<ThemeMode>(
-            valueListenable: widget.themeModeNotifier,
-            builder: (context, currentMode, _) {
-              final isCurrentlyDark = currentMode == ThemeMode.dark ||
-                  (currentMode == ThemeMode.system &&
-                      MediaQuery.of(context).platformBrightness ==
-                          Brightness.dark);
-
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: IconButton(
-                  tooltip: isCurrentlyDark
-                      ? 'التحويل إلى الثيم الفاتح'
-                      : 'التحويل إلى الثيم الداكن',
-                  icon: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (child, anim) => RotationTransition(
-                      turns: anim,
-                      child: FadeTransition(opacity: anim, child: child),
-                    ),
-                    child: Icon(
-                      isCurrentlyDark
-                          ? Icons.light_mode_rounded
-                          : Icons.dark_mode_rounded,
-                      key: ValueKey(isCurrentlyDark),
-                      color: isCurrentlyDark
-                          ? Colors.amber.shade400
-                          : const Color(0xFF1E293B),
-                    ),
-                  ),
-                  onPressed: () {
-                    widget.themeModeNotifier.value =
-                        isCurrentlyDark ? ThemeMode.light : ThemeMode.dark;
-                  },
-                ),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(
@@ -1911,6 +1818,290 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
           : null,
+    );
+  }
+
+  // Sleek Modern Side Drawer
+  Widget _buildSideDrawer(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+
+    return Drawer(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Drawer Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    width: 1.2,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.dynamic_form_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'منظومة النماذج',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'التحول الرقمي المعتمد',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Drawer Options List
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                children: [
+                  // Section: Appearance
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Text(
+                      'المظهر والإعدادات',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+
+                  // Dark / Light Mode Switch
+                  ValueListenableBuilder<ThemeMode>(
+                    valueListenable: widget.themeModeNotifier,
+                    builder: (context, currentMode, _) {
+                      final isCurrentlyDark = currentMode == ThemeMode.dark ||
+                          (currentMode == ThemeMode.system &&
+                              MediaQuery.of(context).platformBrightness ==
+                                  Brightness.dark);
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: (isCurrentlyDark ? Colors.amber : primaryColor)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              isCurrentlyDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                              color: isCurrentlyDark ? Colors.amber.shade400 : primaryColor,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            isCurrentlyDark ? 'الوضع الداكن مفعّل' : 'الوضع الفاتح مفعّل',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            isCurrentlyDark ? 'اضغط للتحويل إلى الثيم الفاتح' : 'اضغط للتحويل إلى الثيم الداكن',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                            ),
+                          ),
+                          trailing: Switch.adaptive(
+                            value: isCurrentlyDark,
+                            activeTrackColor: primaryColor,
+                            onChanged: (val) {
+                              widget.themeModeNotifier.value =
+                                  val ? ThemeMode.dark : ThemeMode.light;
+                            },
+                          ),
+                          onTap: () {
+                            widget.themeModeNotifier.value =
+                                isCurrentlyDark ? ThemeMode.light : ThemeMode.dark;
+                          },
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Section: System & Updates
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Text(
+                      'التحديثات والنظام',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+
+                  // Check for Updates Option
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.system_update_alt_rounded,
+                          color: Color(0xFF10B981),
+                          size: 20,
+                        ),
+                      ),
+                      title: const Text(
+                        'التحقق من وجود تحديثات',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        'فحص الإصدارات الجديدة المتاحة',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                      onTap: () {
+                        Navigator.pop(context);
+                        AppUpdateService.checkForUpdates(
+                          context,
+                          showNoUpdateMessage: true,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Drawer Footer Info
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'النماذج الرقمية',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.grey.shade300 : Colors.grey.shade800,
+                        ),
+                      ),
+                      Text(
+                        _appVersion.isNotEmpty ? 'الإصدار $_appVersion' : 'v1.0.7',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.grey.shade500 : Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF10B981)),
+                        SizedBox(width: 4),
+                        Text(
+                          'نظام رسمي',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

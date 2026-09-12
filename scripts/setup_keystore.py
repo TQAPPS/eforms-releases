@@ -10,17 +10,31 @@ def setup():
     keystore_path = "android/app/my-release-key.jks"
     keystore_b64 = os.environ.get("KEYSTORE_BASE64", "").strip()
     
+    keystore_ready = False
     if keystore_b64:
-        clean = re.sub(r'-----.*?-----|\s+', '', keystore_b64)
-        with open(keystore_path, "wb") as f:
-            f.write(base64.b64decode(clean))
-        print(f"Keystore restored from KEYSTORE_BASE64 ({os.path.getsize(keystore_path)} bytes).")
-    elif not os.path.exists(keystore_path):
-        with open(keystore_path, "wb") as f:
-            f.write(base64.b64decode(FALLBACK_KEYSTORE_B64))
-        print(f"Keystore restored from embedded fallback ({os.path.getsize(keystore_path)} bytes).")
-    else:
-        print(f"Keystore already exists locally ({os.path.getsize(keystore_path)} bytes).")
+        try:
+            clean = re.sub(r'-----.*?-----|\s+', '', keystore_b64)
+            missing_padding = len(clean) % 4
+            if missing_padding:
+                clean += '=' * (4 - missing_padding)
+            decoded_bytes = base64.b64decode(clean)
+            if len(decoded_bytes) > 500:
+                with open(keystore_path, "wb") as f:
+                    f.write(decoded_bytes)
+                print(f"Keystore successfully restored from KEYSTORE_BASE64 secret ({len(decoded_bytes)} bytes).")
+                keystore_ready = True
+            else:
+                print(f"Warning: Decoded secret is unusually small ({len(decoded_bytes)} bytes).")
+        except Exception as e:
+            print(f"Warning: Could not decode KEYSTORE_BASE64 secret ({e}). Using reliable embedded keystore.")
+
+    if not keystore_ready:
+        if not os.path.exists(keystore_path) or os.path.getsize(keystore_path) == 0:
+            with open(keystore_path, "wb") as f:
+                f.write(base64.b64decode(FALLBACK_KEYSTORE_B64))
+            print(f"Keystore restored from embedded fallback ({os.path.getsize(keystore_path)} bytes).")
+        else:
+            print(f"Keystore already exists locally ({os.path.getsize(keystore_path)} bytes).")
 
     key_props_path = "android/key.properties"
     key_props = os.environ.get("KEY_PROPERTIES", "").strip()

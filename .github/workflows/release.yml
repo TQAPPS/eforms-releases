@@ -70,11 +70,8 @@ jobs:
 
       - name: Build Release APK
         run: |
-          flutter build apk --release || {
-            echo "::error::Release build failed, running verbose to show root cause:"
-            flutter build apk --release -v
-            exit 1
-          }
+          chmod +x android/gradlew || true
+          flutter build apk --release
 
       - name: Set Release Tag & Notes
         id: release_meta

@@ -58,21 +58,25 @@ jobs:
           echo "Version: $VERSION, Build: $BUILD_NUMBER"
 
       - name: Setup Keystore & Signing Config
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.KEY_PROPERTIES }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           mkdir -p android/app
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/my-release-key.jks
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            python3 -c "import os, base64, re; data = re.sub(r'-----.*?-----|\s+', '', os.environ.get('KEYSTORE_BASE64', '')); open('android/app/my-release-key.jks', 'wb').write(base64.b64decode(data))"
           fi
           
-          if [ -n "${{ secrets.KEY_PROPERTIES }}" ]; then
-            echo "${{ secrets.KEY_PROPERTIES }}" > android/key.properties
+          if [ -n "$KEY_PROPERTIES" ]; then
+            echo "$KEY_PROPERTIES" > android/key.properties
           else
-            cat <<EOF > android/key.properties
-          storePassword=${{ secrets.STORE_PASSWORD || 'Nova0566#' }}
-          keyPassword=${{ secrets.KEY_PASSWORD || 'Nova0566#' }}
-          keyAlias=${{ secrets.KEY_ALIAS || 'my-key-alias' }}
-          storeFile=my-release-key.jks
-          EOF
+            echo "storePassword=${STORE_PASSWORD:-Nova0566#}" > android/key.properties
+            echo "keyPassword=${KEY_PASSWORD:-Nova0566#}" >> android/key.properties
+            echo "keyAlias=${KEY_ALIAS:-my-key-alias}" >> android/key.properties
+            echo "storeFile=my-release-key.jks" >> android/key.properties
           fi
 
       - name: Install Dependencies
@@ -110,20 +114,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update version.json Automatically
+        env:
+          VERSION: ${{ env.VERSION }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          TAG_NAME: ${{ env.TAG_NAME }}
+          NOTES: ${{ env.NOTES }}
+          FORCE_UPDATE: ${{ env.FORCE_UPDATE }}
+          REPO: ${{ github.repository }}
         run: |
-          APK_DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/app-release.apk"
-          TODAY=$(date +'%Y-%m-%d')
-          
-          cat <<EOF > version.json
-          {
-            "latest_version": "$VERSION",
-            "build_number": $BUILD_NUMBER,
-            "apk_url": "$APK_DOWNLOAD_URL",
-            "release_notes": "$NOTES",
-            "force_update": $FORCE_UPDATE,
-            "publish_date": "$TODAY"
+          python3 - <<'PYEOF'
+          import json, os, datetime
+          repo = os.environ['REPO']
+          tag = os.environ['TAG_NAME']
+          data = {
+              "latest_version": os.environ['VERSION'],
+              "build_number": int(os.environ['BUILD_NUMBER']),
+              "apk_url": f"https://github.com/{repo}/releases/download/{tag}/app-release.apk",
+              "release_notes": os.environ['NOTES'],
+              "force_update": os.environ['FORCE_UPDATE'].lower() == "true",
+              "publish_date": datetime.date.today().isoformat()
           }
-          EOF
+          with open("version.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          PYEOF
 
       - name: Commit & Push updated version.json
         run: |

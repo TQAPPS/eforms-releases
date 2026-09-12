@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:printing/printing.dart';
 import '../models/substation_model.dart';
+import '../services/draft_storage_service.dart';
 import '../services/pdf_generator_service.dart';
+import '../widgets/export_upload_dialog.dart';
+import '../widgets/handwritten_signature_dialog.dart';
 import 'pdf_preview_screen.dart';
 
 class InspectionApprovalScreen extends StatefulWidget {
@@ -21,8 +23,8 @@ class InspectionApprovalScreen extends StatefulWidget {
     required this.inspectionDate,
     required this.powerTransformersData,
     required this.auxTransformersData,
-    required this.hasSpareTransformer,
-    required this.spareTransformersData,
+    this.hasSpareTransformer = false,
+    this.spareTransformersData = const [],
   });
 
   @override
@@ -39,6 +41,26 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
   late final TextEditingController _notesController;
 
   bool _hasSignature = false;
+  Uint8List? _inspectorSignatureBytes;
+  Uint8List? _supervisorSignatureBytes;
+
+  Future<void> _openSignatureDialog({
+    required bool isDark,
+    required bool isInspector,
+  }) async {
+    final result =
+        await HandwrittenSignatureDialog.show(context, isDark: isDark);
+    if (result != null) {
+      setState(() {
+        if (isInspector) {
+          _inspectorSignatureBytes = result;
+        } else {
+          _supervisorSignatureBytes = result;
+        }
+        _hasSignature = true;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -60,7 +82,7 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
     super.dispose();
   }
 
-  void _submitFinalReport() {
+  Future<void> _submitFinalReport() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -89,191 +111,65 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
     final refNumber =
         'GRID-MNT-${DateTime.now().year}-${1000 + (DateTime.now().millisecondsSinceEpoch % 9000)}';
 
-    showDialog(
+    final eqName = widget.powerTransformersData.isNotEmpty
+        ? widget.powerTransformersData
+            .map((e) => e['txName']?.toString() ?? 'TR')
+            .join(', ')
+        : 'Power Transformers';
+    final fileName =
+        'INSPECTION_${widget.substation.name}_${widget.workOrder}_$refNumber.pdf'
+            .replaceAll('/', '_')
+            .replaceAll(' ', '_');
+
+    await ExportUploadProgressDialog.show(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          contentPadding: const EdgeInsets.all(24),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 68,
-                height: 68,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.verified_rounded,
-                  color: Color(0xFF10B981),
-                  size: 44,
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'تم اعتماد وحفظ تقرير الصيانة بنجاح!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'تم إنشاء تقرير الفحص الشهري بصيغة PDF الرسمية (GRID MAINTENANCE) لمحطة (${widget.substation.name}).',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // Reference Badge
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0284C7).withValues(alpha: isDark ? 0.2 : 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFF0284C7).withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.qr_code_2_rounded,
-                        size: 18, color: Color(0xFF0284C7)),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'الرقم المرجعي: $refNumber',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0284C7),
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Button 1: Preview PDF
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0284C7),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                  label: const Text(
-                    'معاينة وحفظ تقرير PDF الرسمي',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  onPressed: () async {
-                    Navigator.pop(ctx); // dismiss dialog
-                    final pdfBytes =
-                        await PdfGeneratorService.generateInspectionPdf(
-                      substation: widget.substation,
-                      workOrder: widget.workOrder,
-                      inspectionDate: widget.inspectionDate,
-                      powerTransformersData: widget.powerTransformersData,
-                      auxTransformersData: widget.auxTransformersData,
-                      hasSpareTransformer: widget.hasSpareTransformer,
-                      spareTransformersData: widget.spareTransformersData,
-                      inspectorName: _inspectorController.text.trim(),
-                      inspectorId: _inspectorIdController.text.trim(),
-                      supervisorName: _supervisorController.text.trim(),
-                      supervisorId: _supervisorIdController.text.trim(),
-                      technicalNotes: _notesController.text.trim(),
-                      referenceNumber: refNumber,
-                    );
-                    if (!mounted) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PdfPreviewScreen(
-                          pdfBytes: pdfBytes,
-                          workOrder: widget.workOrder,
-                          substationName: widget.substation.name,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Button 2: Print/Share Direct
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(Icons.print_rounded, size: 18),
-                  label: const Text(
-                    'طباعة ومشاركة PDF مباشرة',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  onPressed: () async {
-                    await Printing.layoutPdf(
-                      name: 'GRID_MAINTENANCE_${widget.workOrder}',
-                      onLayout: (format) async =>
-                          PdfGeneratorService.generateInspectionPdf(
-                        substation: widget.substation,
-                        workOrder: widget.workOrder,
-                        inspectionDate: widget.inspectionDate,
-                        powerTransformersData: widget.powerTransformersData,
-                        auxTransformersData: widget.auxTransformersData,
-                        hasSpareTransformer: widget.hasSpareTransformer,
-                        spareTransformersData: widget.spareTransformersData,
-                        inspectorName: _inspectorController.text.trim(),
-                        inspectorId: _inspectorIdController.text.trim(),
-                        supervisorName: _supervisorController.text.trim(),
-                        supervisorId: _supervisorIdController.text.trim(),
-                        technicalNotes: _notesController.text.trim(),
-                        referenceNumber: refNumber,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Button 3: Return to Home
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () {
-                    Navigator.pop(ctx); // dismiss dialog
-                    Navigator.popUntil(
-                        context, (route) => route.isFirst); // back to home
-                  },
-                  child: const Text(
-                    'العودة إلى القائمة الرئيسية',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ),
-            ],
+      substation: widget.substation.name,
+      equipment: eqName,
+      formType: 'GRID MAINTENANCE - فحص المحولات الشهري',
+      technician: _inspectorController.text.trim().isNotEmpty
+          ? _inspectorController.text.trim()
+          : 'Inspector',
+      notes: _notesController.text.trim(),
+      fileName: fileName,
+      onGeneratePdf: () async {
+        await DraftStorageService.deleteDraftForForm(
+          formId: 'grid_maintenance',
+          substation: widget.substation.name,
+          workOrderNo: widget.workOrder,
+        );
+        return await PdfGeneratorService.generateInspectionPdf(
+          substation: widget.substation,
+          workOrder: widget.workOrder,
+          inspectionDate: widget.inspectionDate,
+          powerTransformersData: widget.powerTransformersData,
+          auxTransformersData: widget.auxTransformersData,
+          hasSpareTransformer: widget.hasSpareTransformer,
+          spareTransformersData: widget.spareTransformersData,
+          inspectorName: _inspectorController.text.trim(),
+          inspectorId: _inspectorIdController.text.trim(),
+          inspectorSignature: _inspectorSignatureBytes,
+          supervisorName: _supervisorController.text.trim(),
+          supervisorId: _supervisorIdController.text.trim(),
+          supervisorSignature: _supervisorSignatureBytes,
+          technicalNotes: _notesController.text.trim(),
+          referenceNumber: refNumber,
+        );
+      },
+      onPreview: (pdfBytes, driveUrl) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PdfPreviewScreen(
+              pdfBytes: pdfBytes,
+              workOrder: widget.workOrder,
+              substationName: widget.substation.name,
+              equipment: eqName,
+              formType: 'GRID MAINTENANCE - فحص المحولات الشهري',
+              technician: _inspectorController.text.trim(),
+              notes: _notesController.text.trim(),
+              initialDriveUrl: driveUrl,
+            ),
           ),
         );
       },
@@ -336,8 +232,10 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
                 spareTransformersData: widget.spareTransformersData,
                 inspectorName: _inspectorController.text.trim(),
                 inspectorId: _inspectorIdController.text.trim(),
+                inspectorSignature: _inspectorSignatureBytes,
                 supervisorName: _supervisorController.text.trim(),
                 supervisorId: _supervisorIdController.text.trim(),
+                supervisorSignature: _supervisorSignatureBytes,
                 technicalNotes: _notesController.text.trim(),
                 referenceNumber: refNumber,
               );
@@ -582,9 +480,11 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
               Icon(Icons.verified_user_outlined,
                   size: 20, color: Color(0xFF10B981)),
               SizedBox(width: 8),
-              Text(
-                'الاعتماد والتوقيع الرقمي المعتمد',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  'الاعتماد والتوقيع الرقمي المعتمد',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
@@ -607,12 +507,14 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
                   children: [
                     const Icon(Icons.person_rounded, size: 16, color: Color(0xFF0284C7)),
                     const SizedBox(width: 6),
-                    Text(
-                      'المهندس / الفني (الفاحص / المنفذ) - إجباري',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.grey.shade200 : const Color(0xFF0F172A),
+                    Expanded(
+                      child: Text(
+                        'المهندس / الفني (الفاحص / المنفذ) - إجباري',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.grey.shade200 : const Color(0xFF0F172A),
+                        ),
                       ),
                     ),
                   ],
@@ -651,6 +553,23 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 12),
+                _buildSignatureField(
+                  isDark: isDark,
+                  title: 'التوقيع أو الرمز',
+                  subtitle: '(Signature)',
+                  accentColor: const Color(0xFF0284C7),
+                  signatureBytes: _inspectorSignatureBytes,
+                  onSignPressed: () => _openSignatureDialog(
+                    isDark: isDark,
+                    isInspector: true,
+                  ),
+                  onClearPressed: () {
+                    setState(() {
+                      _inspectorSignatureBytes = null;
+                    });
+                  },
+                ),
               ],
             ),
           ),
@@ -674,12 +593,14 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
                   children: [
                     const Icon(Icons.engineering_rounded, size: 16, color: Color(0xFF10B981)),
                     const SizedBox(width: 6),
-                    Text(
-                      'المهندس / الفني (المشرف / المعتمد) - إجباري',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.grey.shade200 : const Color(0xFF0F172A),
+                    Expanded(
+                      child: Text(
+                        'المهندس / الفني (المشرف / المعتمد) - إجباري',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.grey.shade200 : const Color(0xFF0F172A),
+                        ),
                       ),
                     ),
                   ],
@@ -716,6 +637,23 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
                       return 'يرجى إدخال الرقم الوظيفي (إجباري)';
                     }
                     return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildSignatureField(
+                  isDark: isDark,
+                  title: 'التوقيع أو الرمز',
+                  subtitle: '(Signature)',
+                  accentColor: const Color(0xFF10B981),
+                  signatureBytes: _supervisorSignatureBytes,
+                  onSignPressed: () => _openSignatureDialog(
+                    isDark: isDark,
+                    isInspector: false,
+                  ),
+                  onClearPressed: () {
+                    setState(() {
+                      _supervisorSignatureBytes = null;
+                    });
                   },
                 ),
               ],
@@ -807,12 +745,12 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
               ),
               icon: Icon(
                 _hasSignature
-                    ? Icons.verified_rounded
+                    ? Icons.send_and_archive_rounded
                     : Icons.lock_outline_rounded,
                 size: 20,
               ),
               label: const Text(
-                'اعتماد وحفظ تقرير الصيانة النهائي',
+                'تصدير وإرسال PDF',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -823,6 +761,260 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSignatureField({
+    required bool isDark,
+    required String title,
+    required String subtitle,
+    required Color accentColor,
+    required Uint8List? signatureBytes,
+    required VoidCallback onSignPressed,
+    required VoidCallback onClearPressed,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Title and "توقيع" Action Button
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.draw_rounded, size: 16, color: accentColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? const Color(0xFFE2E8F0)
+                          : const Color(0xFF0F2C59),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: isDark
+                            ? Colors.grey.shade400
+                            : const Color(0xFF64748B),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: onSignPressed,
+              icon: const Icon(Icons.gesture_rounded, size: 14),
+              label: const Text(
+                'توقيع',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: accentColor,
+                foregroundColor: Colors.white,
+                elevation: 1,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
+                minimumSize: const Size(0, 32),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Signature Preview or Prompt Card
+        if (signatureBytes != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF1E293B)
+                  : const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF10B981),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.08),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top status bar
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF10B981).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 14,
+                              color: Color(0xFF10B981),
+                            ),
+                            SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'تم التوقيع يدوياً بنجاح',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF10B981),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton.icon(
+                          onPressed: onSignPressed,
+                          icon: const Icon(Icons.edit_rounded, size: 14),
+                          label: const Text(
+                            'تعديل',
+                            style: TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: const Color(0xFF0284C7),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        TextButton.icon(
+                          onPressed: onClearPressed,
+                          icon: const Icon(Icons.delete_outline_rounded,
+                              size: 14),
+                          label: const Text(
+                            'مسح',
+                            style: TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: Colors.red.shade400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Responsive Canvas image preview
+                Container(
+                  width: double.infinity,
+                  height: 64,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      signatureBytes,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          InkWell(
+            onTap: onSignPressed,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFFF1F5F9).withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFCBD5E1),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.touch_app_rounded,
+                    size: 18,
+                    color: accentColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'اضغط على زر "توقيع" أعلاه لرسم التوقيع بإصبعك (Sign Here)',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark
+                            ? Colors.grey.shade400
+                            : const Color(0xFF64748B),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

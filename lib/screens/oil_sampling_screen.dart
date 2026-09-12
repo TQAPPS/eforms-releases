@@ -241,7 +241,10 @@ class _OilSamplingScreenState extends State<OilSamplingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 4,
+                      runSpacing: 4,
                       children: [
                         Text(
                           'سيتم تطبيق هذه الإعدادات على ',
@@ -339,12 +342,14 @@ class _OilSamplingScreenState extends State<OilSamplingScreen> {
           children: [
             Icon(icon, size: 18, color: iconColor),
             const SizedBox(width: 6),
-            Text(
-              '$number $title',
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
+            Expanded(
+              child: Text(
+                '$number $title',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
               ),
             ),
             if (isRequired) ...[

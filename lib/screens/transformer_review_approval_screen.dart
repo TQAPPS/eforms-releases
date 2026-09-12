@@ -7,7 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import '../models/form_model.dart';
 import '../models/substation_model.dart';
+import '../services/draft_storage_service.dart';
 import '../services/pdf_generator_service.dart';
+import '../services/report_upload_service.dart';
 import 'pdf_preview_screen.dart';
 import 'transformer_checklist_screen.dart';
 
@@ -16,12 +18,18 @@ class ExportedEquipmentPdf {
   final Uint8List pdfBytes;
   final String filename;
   final int checkedCount;
+  final String? driveUrl;
+  final bool isUploaded;
+  final String? uploadMessage;
 
   ExportedEquipmentPdf({
     required this.transformer,
     required this.pdfBytes,
     required this.filename,
     required this.checkedCount,
+    this.driveUrl,
+    this.isUploaded = false,
+    this.uploadMessage,
   });
 }
 
@@ -141,48 +149,7 @@ class _TransformerReviewApprovalScreenState
     });
   }
 
-  Future<void> _previewOfficialPdf() async {
-    final tx = _activeTransformer;
-    final itemsToUse = widget.transformerItemsMap?[tx.number] ?? widget.items;
-    final pdfBytes = await PdfGeneratorService.generateTransformerChecklistPdf(
-      division: _divisionController.text.trim(),
-      contactPerson: _contactPersonController.text.trim(),
-      department: _departmentController.text.trim(),
-      workOrder: _workOrderController.text.trim(),
-      substationName: _substationController.text.trim(),
-      inspectionDate: _inspectionDate,
-      equipmentNo: tx.number,
-      equipmentVoltage: tx.voltage,
-      equipmentMva: tx.mva ?? '',
-      equipmentSerial: tx.serial ?? '',
-      equipmentManufacturer: tx.manufacturer ?? '',
-      itemsData: itemsToUse.map((item) {
-        return {
-          'title': item.title,
-          'subTasks': item.subTasks,
-          'checked': item.isChecked,
-          'comments': item.comment,
-        };
-      }).toList(),
-    );
 
-    if (!mounted) return;
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PdfPreviewScreen(
-          pdfBytes: pdfBytes,
-          workOrder: _workOrderController.text.trim().isNotEmpty
-              ? _workOrderController.text.trim()
-              : 'CL-GM-1400',
-          substationName: _substationController.text.trim().isNotEmpty
-              ? _substationController.text.trim()
-              : 'Transformer Checklist',
-        ),
-      ),
-    );
-  }
 
   Future<String?> _savePdfToDevice(Uint8List bytes, String filename) async {
     try {
@@ -253,44 +220,6 @@ class _TransformerReviewApprovalScreenState
       return;
     }
 
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => PopScope(
-        canPop: false,
-        child: Dialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(Color(0xFF0F766E)),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'جاري اعتماد وتصدير نماذج فحص كافة المعدات...',
-                  textAlign: TextAlign.center,
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'يتم إنشاء ملف PDF رسمي ومستقل لكل محول على حدة',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
     final txList = widget.substationTransformers?.isNotEmpty == true
         ? widget.substationTransformers!
         : [
@@ -301,7 +230,6 @@ class _TransformerReviewApprovalScreenState
           ];
 
     final List<ExportedEquipmentPdf> exportedList = [];
-
     final cleanStation = _substationController.text
         .trim()
         .replaceAll(RegExp(r'[\\/:*?"<>|\s]'), '_');
@@ -309,49 +237,51 @@ class _TransformerReviewApprovalScreenState
         .trim()
         .replaceAll(RegExp(r'[\\/:*?"<>|\s]'), '_');
 
-    for (var tx in txList) {
-      final unitItems =
-          widget.transformerItemsMap?[tx.number] ?? widget.items;
-      final unitCheckedCount = unitItems.where((i) => i.isChecked).length;
+    // Show Batch Export & Upload Interactive Progress Dialog
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 440),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+            child: _BatchExportProgressContent(
+              txList: txList,
+              cleanStation: cleanStation,
+              cleanOrder: cleanOrder,
+              substationName: _substationController.text.trim(),
+              workOrder: _workOrderController.text.trim(),
+              inspectionDate: _inspectionDate,
+              division: _divisionController.text.trim(),
+              contactPerson: _contactPersonController.text.trim(),
+              department: _departmentController.text.trim(),
+              items: widget.items,
+              transformerItemsMap: widget.transformerItemsMap,
+              onSaveToDevice: _savePdfToDevice,
+              onComplete: (results) {
+                exportedList.addAll(results);
+                Navigator.pop(ctx);
+              },
+            ),
+          ),
+        );
+      },
+    );
 
-      final pdfBytes =
-          await PdfGeneratorService.generateTransformerChecklistPdf(
-        division: _divisionController.text.trim(),
-        contactPerson: _contactPersonController.text.trim(),
-        department: _departmentController.text.trim(),
-        workOrder: _workOrderController.text.trim(),
-        substationName: _substationController.text.trim(),
-        inspectionDate: _inspectionDate,
-        equipmentNo: tx.number,
-        equipmentVoltage: tx.voltage,
-        equipmentMva: tx.mva ?? '',
-        equipmentSerial: tx.serial ?? '',
-        equipmentManufacturer: tx.manufacturer ?? '',
-        itemsData: unitItems.map((item) {
-          return {
-            'title': item.title,
-            'subTasks': item.subTasks,
-            'checked': item.isChecked,
-            'comments': item.comment,
-          };
-        }).toList(),
-      );
+    if (!mounted || exportedList.isEmpty) return;
 
-      final filename =
-          'Checklist_${tx.number}_${cleanStation}_$cleanOrder.pdf';
-
-      exportedList.add(
-        ExportedEquipmentPdf(
-          transformer: tx,
-          pdfBytes: pdfBytes,
-          filename: filename,
-          checkedCount: unitCheckedCount,
-        ),
-      );
-    }
-
-    if (!mounted) return;
-    Navigator.pop(context); // Dismiss loading dialog
+    // Delete draft since the form is completed in full and exported
+    await DraftStorageService.deleteDraftForForm(
+      formId: 'transformer_checklist',
+      substation: _substationController.text.trim(),
+      workOrderNo: _workOrderController.text.trim(),
+    );
 
     // Show Export Hub Modal Bottom Sheet
     _showExportHubDialog(exportedList);
@@ -708,36 +638,189 @@ class _TransformerReviewApprovalScreenState
                                         ],
                                       ),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 10),
 
-                                    // Action Buttons: Share & Save/Print & Preview
+                                    // Google Drive Upload Status Banner
+                                    Container(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: item.isUploaded
+                                            ? const Color(0xFF10B981)
+                                                .withValues(
+                                                    alpha: isDark ? 0.2 : 0.1)
+                                            : const Color(0xFFF59E0B)
+                                                .withValues(
+                                                    alpha: isDark ? 0.2 : 0.1),
+                                        borderRadius:
+                                            BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: item.isUploaded
+                                              ? const Color(0xFF10B981)
+                                                  .withValues(alpha: 0.4)
+                                              : const Color(0xFFF59E0B)
+                                                  .withValues(alpha: 0.4),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            item.isUploaded
+                                                ? Icons.cloud_done_rounded
+                                                : Icons.cloud_off_rounded,
+                                            size: 18,
+                                            color: item.isUploaded
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFFF59E0B),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              item.isUploaded
+                                                  ? 'تم الرفع والأرشفة في Google Drive بنجاح'
+                                                  : (item.uploadMessage ??
+                                                      'لم يتم الرفع إلى السحابة'),
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: item.isUploaded
+                                                    ? (isDark
+                                                        ? const Color(
+                                                            0xFF34D399)
+                                                        : const Color(
+                                                            0xFF065F46))
+                                                    : (isDark
+                                                        ? const Color(
+                                                            0xFFFBBF24)
+                                                        : const Color(
+                                                            0xFF92400E)),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (item.driveUrl != null &&
+                                              item.driveUrl!.isNotEmpty)
+                                            InkWell(
+                                              onTap: () {
+                                                Clipboard.setData(
+                                                    ClipboardData(
+                                                        text: item.driveUrl!));
+                                                ScaffoldMessenger.of(ctx)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'تم نسخ رابط Google Drive للمحول ${item.transformer.number} إلى الحافظة',
+                                                    ),
+                                                    backgroundColor:
+                                                        const Color(0xFF0F766E),
+                                                    behavior: SnackBarBehavior
+                                                        .floating,
+                                                  ),
+                                                );
+                                              },
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      const Color(0xFF0F766E)
+                                                          .withValues(
+                                                              alpha: 0.15),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.copy_rounded,
+                                                        size: 12,
+                                                        color:
+                                                            Color(0xFF0F766E)),
+                                                    SizedBox(width: 4),
+                                                    Text(
+                                                      'نسخ الرابط',
+                                                      style: TextStyle(
+                                                        fontSize: 10.5,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color:
+                                                            Color(0xFF0F766E),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    // Action Buttons: Preview & Save/Print & Share
                                     Wrap(
                                       spacing: 8,
                                       runSpacing: 6,
                                       children: [
-                                        // 1. Share Button
+                                        // 1. Primary: Preview Button with Equipment Details
                                         ElevatedButton.icon(
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor:
-                                                const Color(0xFF0284C7),
+                                                const Color(0xFF0F766E),
                                             foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 14,
+                                                    vertical: 9),
                                             shape: RoundedRectangleBorder(
                                               borderRadius:
                                                   BorderRadius.circular(10),
                                             ),
                                           ),
-                                          icon: const Icon(Icons.share_rounded,
+                                          icon: const Icon(
+                                              Icons.visibility_rounded,
                                               size: 16),
-                                          label: const Text(
-                                            'مشاركة عبر الإيميل / التطبيقات',
-                                            style: TextStyle(fontSize: 12),
+                                          label: Text(
+                                            'معاينة نموذج ${item.transformer.number}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
-                                          onPressed: () async {
-                                            await Printing.sharePdf(
-                                              bytes: item.pdfBytes,
-                                              filename: item.filename,
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    PdfPreviewScreen(
+                                                  pdfBytes: item.pdfBytes,
+                                                  workOrder:
+                                                      _workOrderController
+                                                          .text
+                                                          .trim(),
+                                                  substationName:
+                                                      _substationController
+                                                          .text
+                                                          .trim(),
+                                                  equipment:
+                                                      item.transformer.number,
+                                                  pageTitle:
+                                                      '${_substationController.text.trim()} - المحول ${item.transformer.number}',
+                                                  pdfFileName: item.filename,
+                                                  initialDriveUrl:
+                                                      item.driveUrl,
+                                                  formType:
+                                                      'Checklist for Substation Power Transformer (CL-GM-1400-002-002)',
+                                                  technician:
+                                                      _contactPersonController
+                                                          .text
+                                                          .trim(),
+                                                ),
+                                              ),
                                             );
                                           },
                                         ),
@@ -745,8 +828,10 @@ class _TransformerReviewApprovalScreenState
                                         // 2. Save / Print Button
                                         OutlinedButton.icon(
                                           style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 8),
                                             side: const BorderSide(
                                                 color: Color(0xFF0F766E)),
                                             shape: RoundedRectangleBorder(
@@ -795,27 +880,32 @@ class _TransformerReviewApprovalScreenState
                                           },
                                         ),
 
-                                        // 3. Preview Button
-                                        IconButton(
-                                          tooltip: 'معاينة النموذج',
+                                        // 3. Share Button
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF0284C7),
+                                            foregroundColor: Colors.white,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
                                           icon: const Icon(
-                                              Icons.visibility_rounded,
-                                              size: 20,
-                                              color: Color(0xFF0F766E)),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    PdfPreviewScreen(
-                                                  pdfBytes: item.pdfBytes,
-                                                  workOrder:
-                                                      _workOrderController
-                                                          .text,
-                                                  substationName:
-                                                      '${_substationController.text} (${item.transformer.number})',
-                                                ),
-                                              ),
+                                              Icons.share_rounded,
+                                              size: 16),
+                                          label: const Text(
+                                            'مشاركة',
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                          onPressed: () async {
+                                            await Printing.sharePdf(
+                                              bytes: item.pdfBytes,
+                                              filename: item.filename,
                                             );
                                           },
                                         ),
@@ -887,14 +977,6 @@ class _TransformerReviewApprovalScreenState
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_rounded),
-            tooltip: 'معاينة PDF',
-            onPressed: _previewOfficialPdf,
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -922,57 +1004,42 @@ class _TransformerReviewApprovalScreenState
                       const SizedBox(height: 24),
                     ],
 
-                    // Bottom Action Buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 1,
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              side: const BorderSide(color: Color(0xFF0F766E)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            icon: const Icon(
-                              Icons.picture_as_pdf_rounded,
-                              color: Color(0xFF0F766E),
-                            ),
-                            label: const Text(
-                              'معاينة PDF',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F766E),
-                              ),
-                            ),
-                            onPressed: _previewOfficialPdf,
+                    // Bottom Action Button: Unified Export & Send to Google Drive
+                    Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF0F766E), Color(0xFF059669)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0F766E).withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0F766E),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            icon: const Icon(Icons.check_circle_outline_rounded),
-                            label: const Text(
-                              'اعتماد وحفظ النموذج',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            onPressed: _submitForm,
+                        icon: const Icon(Icons.send_and_archive_rounded, size: 22),
+                        label: const Text(
+                          'تصدير وإرسال PDF',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ],
+                        onPressed: _submitForm,
+                      ),
                     ),
                     const SizedBox(height: 32),
                   ],
@@ -1679,9 +1746,11 @@ class _TransformerReviewApprovalScreenState
             children: [
               Icon(Icons.verified_user_rounded, size: 18, color: Color(0xFF0F766E)),
               SizedBox(width: 8),
-              Text(
-                'الاعتماد والإقرار الإلكتروني (Electronic Verification)',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  'الاعتماد والإقرار الإلكتروني (Electronic Verification)',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
@@ -1800,6 +1869,302 @@ class _TransformerReviewApprovalScreenState
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BatchExportProgressContent extends StatefulWidget {
+  final List<TransformerInfo> txList;
+  final String cleanStation;
+  final String cleanOrder;
+  final String substationName;
+  final String workOrder;
+  final String inspectionDate;
+  final String division;
+  final String contactPerson;
+  final String department;
+  final List<ChecklistItemModel> items;
+  final Map<String, List<ChecklistItemModel>>? transformerItemsMap;
+  final Future<String?> Function(Uint8List bytes, String filename) onSaveToDevice;
+  final void Function(List<ExportedEquipmentPdf> results) onComplete;
+
+  const _BatchExportProgressContent({
+    required this.txList,
+    required this.cleanStation,
+    required this.cleanOrder,
+    required this.substationName,
+    required this.workOrder,
+    required this.inspectionDate,
+    required this.division,
+    required this.contactPerson,
+    required this.department,
+    required this.items,
+    this.transformerItemsMap,
+    required this.onSaveToDevice,
+    required this.onComplete,
+  });
+
+  @override
+  State<_BatchExportProgressContent> createState() =>
+      _BatchExportProgressContentState();
+}
+
+class _BatchExportProgressContentState
+    extends State<_BatchExportProgressContent> {
+  final Map<String, String> _statuses = {};
+  final Map<String, bool> _completed = {};
+  int _currentIndex = 0;
+  bool _isFinished = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (var tx in widget.txList) {
+      _statuses[tx.number] = 'في قائمة الانتظار...';
+      _completed[tx.number] = false;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _executeBatch());
+  }
+
+  Future<void> _executeBatch() async {
+    final List<ExportedEquipmentPdf> results = [];
+
+    for (int i = 0; i < widget.txList.length; i++) {
+      if (!mounted) return;
+      setState(() {
+        _currentIndex = i;
+      });
+
+      final tx = widget.txList[i];
+      final List<ChecklistItemModel> unitItems =
+          widget.transformerItemsMap?[tx.number] ?? widget.items;
+      final unitCheckedCount = unitItems.where((item) => item.isChecked).length;
+
+      // Phase 1: Generating PDF
+      setState(() {
+        _statuses[tx.number] = 'جاري إنشاء ملف PDF...';
+      });
+
+      final pdfBytes =
+          await PdfGeneratorService.generateTransformerChecklistPdf(
+        division: widget.division,
+        contactPerson: widget.contactPerson,
+        department: widget.department,
+        workOrder: widget.workOrder,
+        substationName: widget.substationName,
+        inspectionDate: widget.inspectionDate,
+        equipmentNo: tx.number,
+        equipmentVoltage: tx.voltage,
+        equipmentMva: tx.mva ?? '',
+        equipmentSerial: tx.serial ?? '',
+        equipmentManufacturer: tx.manufacturer ?? '',
+        itemsData: unitItems.map((item) {
+          return {
+            'title': item.title,
+            'subTasks': item.subTasks,
+            'checked': item.isChecked,
+            'comments': item.comment,
+          };
+        }).toList(),
+      );
+
+      final filename =
+          'Checklist_${tx.number}_${widget.cleanStation}_${widget.cleanOrder}.pdf';
+
+      // Save locally to device
+      await widget.onSaveToDevice(pdfBytes, filename);
+
+      // Phase 2: Uploading to Google Drive
+      if (mounted) {
+        setState(() {
+          _statuses[tx.number] = 'جاري الرفع إلى Google Drive...';
+        });
+      }
+
+      final uploadResult = await ReportUploadService.uploadInspectionPdf(
+        substation: widget.substationName,
+        equipment: tx.number,
+        formType: 'Checklist for Substation Power Transformer (CL-GM-1400-002-002)',
+        technician: widget.contactPerson.isNotEmpty ? widget.contactPerson : 'Inspector',
+        notes: 'المحول ${tx.number} - جهد ${tx.voltage} - محطة ${widget.substationName}',
+        fileName: filename,
+        pdfBytes: pdfBytes,
+      );
+
+      results.add(
+        ExportedEquipmentPdf(
+          transformer: tx,
+          pdfBytes: pdfBytes,
+          filename: filename,
+          checkedCount: unitCheckedCount,
+          driveUrl: uploadResult.driveFileUrl,
+          isUploaded: uploadResult.isSuccess,
+          uploadMessage: uploadResult.message,
+        ),
+      );
+
+      if (mounted) {
+        setState(() {
+          _completed[tx.number] = true;
+          _statuses[tx.number] = uploadResult.isSuccess
+              ? 'تم التصدير والرفع بنجاح ✓'
+              : 'تم التصدير محلياً (تعذر الرفع السحابي)';
+        });
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isFinished = true;
+    });
+
+    if (results.isNotEmpty) {
+      await DraftStorageService.deleteDraftForForm(
+        formId: 'transformer_checklist',
+        substation: widget.substationName,
+        workOrderNo: widget.workOrder,
+      );
+    }
+
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (mounted) {
+      widget.onComplete(results);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final progress = widget.txList.isEmpty
+        ? 0.0
+        : (_completed.values.where((v) => v).length / widget.txList.length);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Header animated badge
+        Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F766E).withValues(alpha: 0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            _isFinished ? Icons.cloud_done_rounded : Icons.cloud_upload_rounded,
+            color: const Color(0xFF0F766E),
+            size: 32,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text(
+          'جاري اعتماد وتصدير ونشر النماذج',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'محطة ${widget.substationName} • (${widget.txList.length} محولات)',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Progress bar
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 6,
+            backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0F766E)),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Per-Transformer Status List
+        Container(
+          constraints: const BoxConstraints(maxHeight: 220),
+          child: SingleChildScrollView(
+            child: Column(
+              children: widget.txList.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final tx = entry.value;
+                final isDone = _completed[tx.number] == true;
+                final isActive = idx == _currentIndex && !isDone;
+                final status = _statuses[tx.number] ?? '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? (isActive ? const Color(0xFF1E293B) : const Color(0xFF0F172A))
+                        : (isActive ? const Color(0xFFF0FDFA) : const Color(0xFFF8FAFC)),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isActive
+                          ? const Color(0xFF0F766E)
+                          : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      width: isActive ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      if (isDone)
+                        const Icon(Icons.check_circle_rounded,
+                            size: 18, color: Color(0xFF10B981))
+                      else if (isActive)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0F766E)),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.schedule_rounded, size: 18, color: Colors.grey),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'المحول ${tx.number} (${tx.voltage})',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isActive ? const Color(0xFF0F766E) : null,
+                              ),
+                            ),
+                            Text(
+                              status,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDone
+                                    ? const Color(0xFF10B981)
+                                    : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

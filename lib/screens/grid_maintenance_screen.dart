@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/form_model.dart';
 import '../models/substation_model.dart';
+import '../models/draft_model.dart';
+import '../services/draft_storage_service.dart';
 import 'inspection_approval_screen.dart';
 
 class GridMaintenanceScreen extends StatefulWidget {
@@ -10,6 +12,7 @@ class GridMaintenanceScreen extends StatefulWidget {
   final SubstationModel? selectedSubstation;
   final String? initialWorkOrder;
   final String? initialInspectionDate;
+  final Map<String, dynamic>? draftData;
 
   const GridMaintenanceScreen({
     super.key,
@@ -17,6 +20,7 @@ class GridMaintenanceScreen extends StatefulWidget {
     this.selectedSubstation,
     this.initialWorkOrder,
     this.initialInspectionDate,
+    this.draftData,
   });
 
   @override
@@ -51,6 +55,7 @@ class _GridMaintenanceScreenState extends State<GridMaintenanceScreen>
   bool? _hasSpareTransformer;
   int _spareCount = 1;
   final List<Map<String, TextEditingController>> _spareTransformersControllers = [];
+  bool _isSavingDraft = false;
 
   @override
   void initState() {
@@ -71,7 +76,11 @@ class _GridMaintenanceScreenState extends State<GridMaintenanceScreen>
     _inspectionDate = widget.initialInspectionDate ??
         DateFormat('yyyy/MM/dd').format(DateTime.now());
 
-    _initTransformersData();
+    if (widget.draftData != null) {
+      _loadDraftData(widget.draftData!);
+    } else {
+      _initTransformersData();
+    }
   }
 
   void _scrollToTop(ScrollController controller) {
@@ -195,6 +204,178 @@ class _GridMaintenanceScreenState extends State<GridMaintenanceScreen>
 
     _selectedPowerTxIndex = 0;
     _selectedAuxTxIndex = 0;
+  }
+
+  void _loadDraftData(Map<String, dynamic> draft) {
+    if (draft['workOrderNo'] != null && (draft['workOrderNo'] as String).isNotEmpty) {
+      _workOrderController.text = draft['workOrderNo'];
+    }
+    if (draft['inspectionDate'] != null && (draft['inspectionDate'] as String).isNotEmpty) {
+      _inspectionDate = draft['inspectionDate'];
+    }
+
+    final rawPower = draft['powerTransformersData'];
+    if (rawPower is List && rawPower.isNotEmpty) {
+      _powerTransformersData = rawPower
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } else {
+      _initTransformersData();
+    }
+
+    final rawAux = draft['auxTransformersData'];
+    if (rawAux is List && rawAux.isNotEmpty) {
+      _auxTransformersData = rawAux
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } else {
+      final auxList = _currentSubstation.auxTransformers;
+      if (auxList.isNotEmpty) {
+        _auxTransformersData = auxList
+            .map((t) => _createDefaultTxData(t.number, t.voltage))
+            .toList();
+      } else {
+        _auxTransformersData = List.generate(
+          2,
+          (index) => _createDefaultTxData(
+            'AUX-T${index + 1}',
+            '13.8/0.4 kV (1.5 MVA)',
+          ),
+        );
+      }
+    }
+
+    _selectedPowerTxIndex =
+        (draft['selectedPowerTxIndex'] as num?)?.toInt() ?? 0;
+    if (_selectedPowerTxIndex >= _powerTransformersData.length) {
+      _selectedPowerTxIndex = 0;
+    }
+
+    _selectedAuxTxIndex =
+        (draft['selectedAuxTxIndex'] as num?)?.toInt() ?? 0;
+    if (_selectedAuxTxIndex >= _auxTransformersData.length) {
+      _selectedAuxTxIndex = 0;
+    }
+
+    _hasSpareTransformer = draft['hasSpareTransformer'] as bool?;
+    _spareCount = (draft['spareCount'] as num?)?.toInt() ?? 1;
+
+    final rawSpares = draft['spareTransformers'];
+    if (rawSpares is List && rawSpares.isNotEmpty) {
+      _spareTransformersControllers.clear();
+      for (final sp in rawSpares) {
+        if (sp is Map) {
+          _spareTransformersControllers.add({
+            'number':
+                TextEditingController(text: sp['number']?.toString() ?? ''),
+            'condition':
+                TextEditingController(text: sp['condition']?.toString() ?? ''),
+          });
+        }
+      }
+    } else {
+      _initSpareTransformers(_spareCount);
+    }
+
+    final savedTabIndex = (draft['tabIndex'] as num?)?.toInt() ?? 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && savedTabIndex >= 0 && savedTabIndex < _tabController.length) {
+        _tabController.animateTo(savedTabIndex);
+      }
+    });
+  }
+
+  Future<void> _saveDraft({bool showSnackBar = true}) async {
+    setState(() => _isSavingDraft = true);
+
+    String currentStep;
+    if (_tabController.index == 0) {
+      final txNum = _powerTransformersData.isNotEmpty &&
+              _selectedPowerTxIndex < _powerTransformersData.length
+          ? _powerTransformersData[_selectedPowerTxIndex]['txNumber'] ?? ''
+          : '';
+      currentStep = 'محولات القدرة ($txNum)';
+    } else if (_tabController.index == 1) {
+      final auxNum = _auxTransformersData.isNotEmpty &&
+              _selectedAuxTxIndex < _auxTransformersData.length
+          ? _auxTransformersData[_selectedAuxTxIndex]['txNumber'] ?? ''
+          : '';
+      currentStep = 'محولات المساعدات ($auxNum)';
+    } else {
+      currentStep = 'محولات الاحتياط (Spare)';
+    }
+
+    final draftId = widget.draftData?['id']?.toString() ??
+        'grid_mnt_${_currentSubstation.name}_${_workOrderController.text.trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}_${DateTime.now().millisecondsSinceEpoch}';
+
+    final draft = DraftModel(
+      id: draftId,
+      formId: 'grid_maintenance',
+      formTitle: 'Monthly Inspection Power Transformer',
+      formCode: 'GRID-MNT',
+      workOrderNo: _workOrderController.text.trim().isEmpty
+          ? 'بدون أمر عمل'
+          : _workOrderController.text.trim(),
+      substation: _currentSubstation.name,
+      stepDescription: currentStep,
+      createdAt: widget.draftData?['createdAt']?.toString() ??
+          DateTime.now().toIso8601String(),
+      updatedAt: DateTime.now().toIso8601String(),
+      data: {
+        'id': draftId,
+        'workOrderNo': _workOrderController.text.trim(),
+        'substation': _currentSubstation.name,
+        'inspectionDate': _inspectionDate,
+        'tabIndex': _tabController.index,
+        'selectedPowerTxIndex': _selectedPowerTxIndex,
+        'selectedAuxTxIndex': _selectedAuxTxIndex,
+        'powerTransformersData': _powerTransformersData,
+        'auxTransformersData': _auxTransformersData,
+        'hasSpareTransformer': _hasSpareTransformer,
+        'spareCount': _spareCount,
+        'spareTransformers': _spareTransformersControllers
+            .map((m) => {
+                  'number': m['number']?.text ?? '',
+                  'condition': m['condition']?.text ?? '',
+                })
+            .toList(),
+      },
+    );
+
+    final success = await DraftStorageService.saveDraft(draft);
+
+    if (mounted) {
+      setState(() => _isSavingDraft = false);
+      if (showSnackBar) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  success
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.error_outline_rounded,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    success
+                        ? 'تم حفظ المسودة بنجاح (صالحة لمدة 24 ساعة للخانة الحالية)'
+                        : 'حدث خطأ أثناء حفظ المسودة',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor:
+                success ? const Color(0xFF0F766E) : Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   // Get list of missing/empty inspection items for a transformer
@@ -915,8 +1096,19 @@ class _GridMaintenanceScreenState extends State<GridMaintenanceScreen>
             ),
           ],
         ),
-        actions: const [
-          SizedBox(width: 48), // Balancing leading back button for true center alignment
+        actions: [
+          IconButton(
+            icon: _isSavingDraft
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.bookmark_border_rounded),
+            tooltip: 'حفظ المسودة (24 ساعة)',
+            onPressed: _isSavingDraft ? null : () => _saveDraft(),
+          ),
+          const SizedBox(width: 4),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -2681,39 +2873,94 @@ class _GridMaintenanceScreenState extends State<GridMaintenanceScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isActionEnabled
-                    ? const Color(0xFF0284C7)
-                    : (isDark
+          child: Row(
+            children: [
+              // Save Draft button
+              Expanded(
+                flex: 1,
+                child: OutlinedButton(
+                  onPressed: _isSavingDraft ? null : () => _saveDraft(),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: isDark
                         ? const Color(0xFF1E293B)
-                        : const Color(0xFFE2E8F0)),
-                foregroundColor: isActionEnabled
-                    ? Colors.white
-                    : (isDark ? Colors.grey.shade600 : Colors.grey.shade500),
-                disabledBackgroundColor: isDark
-                    ? const Color(0xFF1E293B)
-                    : const Color(0xFFE2E8F0),
-                disabledForegroundColor:
-                    isDark ? Colors.grey.shade600 : Colors.grey.shade500,
-                elevation: isActionEnabled ? 2 : 0,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                        : const Color(0xFFF1F5F9),
+                    foregroundColor: isDark
+                        ? const Color(0xFFCBD5E1)
+                        : const Color(0xFF334155),
+                    side: BorderSide(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFCBD5E1),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: _isSavingDraft
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.bookmark_border_rounded, size: 18),
+                            SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'حفظ المسودة',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ),
-              icon: Icon(buttonIcon, size: 20),
-              label: Text(
-                buttonText,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+              const SizedBox(width: 10),
+
+              // Action button
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isActionEnabled
+                        ? const Color(0xFF0284C7)
+                        : (isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFE2E8F0)),
+                    foregroundColor: isActionEnabled
+                        ? Colors.white
+                        : (isDark ? Colors.grey.shade600 : Colors.grey.shade500),
+                    disabledBackgroundColor: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFE2E8F0),
+                    disabledForegroundColor:
+                        isDark ? Colors.grey.shade600 : Colors.grey.shade500,
+                    elevation: isActionEnabled ? 2 : 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  icon: Icon(buttonIcon, size: 20),
+                  label: Text(
+                    buttonText,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: buttonCallback,
                 ),
               ),
-              onPressed: buttonCallback,
-            ),
+            ],
           ),
         ),
       ),

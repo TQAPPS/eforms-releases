@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import '../models/form_model.dart';
@@ -56,7 +57,6 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
   late TextEditingController _samplerPhoneController;
   late TextEditingController _sampleTempController;
 
-  bool _isGenerating = false;
 
   @override
   void initState() {
@@ -85,9 +85,30 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
     super.dispose();
   }
 
-  Future<void> _handleExportPdf() async {
-    setState(() => _isGenerating = true);
+  Future<Uint8List> _generatePdfBytes() async {
+    return await PdfGeneratorService.generateOilSamplingPdf(
+      substation: widget.selectedSubstation,
+      selectedTransformers: widget.selectedTransformers,
+      workOrder: '',
+      sampleTemp: _sampleTempController.text.trim(),
+      resultsSendToName: _resultsNameController.text.trim(),
+      resultsSendToEmail: _resultsEmailController.text.trim(),
+      resultsSendToPhone: _resultsPhoneController.text.trim(),
+      samplerName: _samplerNameController.text.trim(),
+      samplerId: _samplerIdController.text.trim(),
+      samplerPhone: _samplerPhoneController.text.trim(),
+      inspectionDate: widget.initialInspectionDate,
+      division: widget.initialDivision,
+      department: widget.initialDepartment,
+      equipmentTypes: widget.equipmentTypes,
+      samplingPoints: widget.samplingPoints,
+      otherSamplingPoints: widget.otherSamplingPoints,
+      testsRequired: widget.testsRequired,
+      reasonsForTest: widget.reasonsForTest,
+    );
+  }
 
+  Future<void> _handleExportPdf() async {
     // Show loading dialog
     showDialog(
       context: context,
@@ -118,30 +139,23 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
     );
 
     try {
-      final pdfBytes = await PdfGeneratorService.generateOilSamplingPdf(
-        substation: widget.selectedSubstation,
-        selectedTransformers: widget.selectedTransformers,
-        workOrder: '',
-        sampleTemp: _sampleTempController.text.trim(),
-        resultsSendToName: _resultsNameController.text.trim(),
-        resultsSendToEmail: _resultsEmailController.text.trim(),
-        resultsSendToPhone: _resultsPhoneController.text.trim(),
-        samplerName: _samplerNameController.text.trim(),
-        samplerId: _samplerIdController.text.trim(),
-        samplerPhone: _samplerPhoneController.text.trim(),
-        inspectionDate: widget.initialInspectionDate,
-        division: widget.initialDivision,
-        department: widget.initialDepartment,
-        equipmentTypes: widget.equipmentTypes,
-        samplingPoints: widget.samplingPoints,
-        otherSamplingPoints: widget.otherSamplingPoints,
-        testsRequired: widget.testsRequired,
-        reasonsForTest: widget.reasonsForTest,
-      );
+      final pdfBytes = await _generatePdfBytes();
 
       if (!mounted) return;
       Navigator.pop(context); // Close loading dialog
-      setState(() => _isGenerating = false);
+
+      final dateStr = widget.initialInspectionDate.replaceAll('/', '_');
+      final cleanSubName = widget.selectedSubstation.name.replaceAll('/', '_');
+      final eqName = widget.selectedTransformers.isNotEmpty
+          ? widget.selectedTransformers.map((t) => t.number).join(', ')
+          : (widget.equipmentTypes.isNotEmpty
+              ? widget.equipmentTypes.join(', ')
+              : 'Transformer');
+      final fileName = 'OIL_SAMPLING_${cleanSubName}_$dateStr.pdf';
+      final technician = _samplerNameController.text.trim().isNotEmpty
+          ? _samplerNameController.text.trim()
+          : 'Technician';
+      final notes = widget.reasonsForTest.join(', ');
 
       await Navigator.push(
         context,
@@ -150,17 +164,20 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
             pdfBytes: pdfBytes,
             workOrder: '',
             substationName: widget.selectedSubstation.name,
+            equipment: eqName,
+            formType: 'نموذج عينات الزيت (INSULATING OIL SAMPLE)',
+            technician: technician,
+            notes: notes,
             pageTitle: 'نموذج عينات الزيت (INSULATING OIL SAMPLE)',
-            pdfFileName:
-                'OIL_SAMPLING_${widget.selectedSubstation.name}_${widget.initialInspectionDate.replaceAll('/', '_')}.pdf',
+            pdfFileName: fileName,
             initialPageFormat: PdfPageFormat.a4,
+            showUploadAction: false,
           ),
         ),
       );
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        setState(() => _isGenerating = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('حدث خطأ أثناء تصدير ملف PDF: $e'),
@@ -319,14 +336,18 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'تاريخ السحب: ${widget.initialInspectionDate}',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+              Expanded(
+                child: Text(
+                  'تاريخ السحب: ${widget.initialInspectionDate}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (widget.initialSampleTemp.isNotEmpty)
+              if (widget.initialSampleTemp.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Text(
                   'حرارة العينة: ${widget.initialSampleTemp} °C',
                   style: const TextStyle(
@@ -335,6 +356,7 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
                     color: Color(0xFFD97706),
                   ),
                 ),
+              ],
             ],
           ),
         ],
@@ -495,11 +517,13 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              const Text(
-                'بيانات القائم بسحب العينة (SAMPLE DRAWN BY)',
-                style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.bold,
+              const Expanded(
+                child: Text(
+                  'بيانات القائم بسحب العينة (SAMPLE DRAWN BY)',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -648,34 +672,39 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
         ),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Main Action Button: تصدير PDF
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F766E),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          // Export PDF Button: تصدير PDF
+          Expanded(
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFF0F766E),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 2,
               ),
-              elevation: 2,
-            ),
-            icon: const Icon(
-              Icons.picture_as_pdf_rounded,
-              size: 20,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'تصدير PDF',
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.bold,
+              icon: const Icon(
+                Icons.picture_as_pdf_rounded,
+                size: 18,
                 color: Colors.white,
               ),
+              label: const Text(
+                'تصدير PDF',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              onPressed: _handleExportPdf,
             ),
-            onPressed: _isGenerating ? null : _handleExportPdf,
           ),
+          const SizedBox(width: 8),
 
           // Back Button: رجوع
           TextButton(
@@ -683,13 +712,13 @@ class _OilSamplingApprovalScreenState extends State<OilSamplingApprovalScreen> {
               foregroundColor:
                   isDark ? Colors.grey.shade300 : const Color(0xFF334155),
               padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
             onPressed: () => Navigator.pop(context),
             child: const Text(
               'رجوع',
               style: TextStyle(
-                fontSize: 14.5,
+                fontSize: 13,
                 fontWeight: FontWeight.bold,
               ),
             ),

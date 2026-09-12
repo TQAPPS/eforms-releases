@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:arabic_reshaper/arabic_reshaper.dart';
 import '../models/substation_model.dart';
+import '../models/annual_detail_inspection_model.dart';
 
 class _InspectionRowDef {
   final String title;
@@ -124,8 +126,10 @@ class PdfGeneratorService {
     required List<Map<String, String>> spareTransformersData,
     required String inspectorName,
     String inspectorId = '',
+    Uint8List? inspectorSignature,
     required String supervisorName,
     String supervisorId = '',
+    Uint8List? supervisorSignature,
     required String technicalNotes,
     required String referenceNumber,
   }) async {
@@ -355,8 +359,10 @@ class PdfGeneratorService {
                 notes: technicalNotes,
                 inspectorName: inspectorName,
                 inspectorId: inspectorId,
+                inspectorSignature: inspectorSignature,
                 supervisorName: supervisorName,
                 supervisorId: supervisorId,
+                supervisorSignature: supervisorSignature,
                 referenceNumber: referenceNumber,
                 fontBold: fontBold,
                 fontRegular: fontRegular,
@@ -837,8 +843,10 @@ class PdfGeneratorService {
     required String notes,
     required String inspectorName,
     required String inspectorId,
+    Uint8List? inspectorSignature,
     required String supervisorName,
     required String supervisorId,
+    Uint8List? supervisorSignature,
     required String referenceNumber,
     required pw.Font fontBold,
     required pw.Font fontRegular,
@@ -887,7 +895,7 @@ class PdfGeneratorService {
         pw.Container(
           width: colWidth,
           height: 60,
-          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: pw.BoxDecoration(
             border: pw.Border.all(color: PdfColors.black, width: 1.0),
             color: const PdfColor.fromInt(0xFFF8FAFC),
@@ -900,21 +908,36 @@ class PdfGeneratorService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.RichText(
-                    text: pw.TextSpan(
-                      children: [
-                        pw.TextSpan(text: 'Engineer / Technician: ', style: pw.TextStyle(fontSize: 7.5, font: fontBold)),
-                        pw.TextSpan(
-                          text: inspectorName.isNotEmpty ? inspectorName : 'Certified Technician',
-                          style: pw.TextStyle(fontSize: 7.5, font: fontRegular),
-                        ),
-                      ],
+                  pw.Expanded(
+                    child: pw.RichText(
+                      text: pw.TextSpan(
+                        children: [
+                          pw.TextSpan(text: 'Engineer / Technician: ', style: pw.TextStyle(fontSize: 7.5, font: fontBold)),
+                          pw.TextSpan(
+                            text: inspectorName.isNotEmpty ? inspectorName : 'Certified Technician',
+                            style: pw.TextStyle(fontSize: 7.5, font: fontRegular),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   if (inspectorId.isNotEmpty)
-                    pw.Text(
-                      'Emp ID: $inspectorId',
-                      style: pw.TextStyle(fontSize: 7.5, font: fontBold, color: const PdfColor.fromInt(0xFF0284C7)),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+                      child: pw.Text(
+                        'Emp ID: $inspectorId',
+                        style: pw.TextStyle(fontSize: 7.5, font: fontBold, color: const PdfColor.fromInt(0xFF0284C7)),
+                      ),
+                    ),
+                  if (inspectorSignature != null)
+                    pw.Container(
+                      height: 18,
+                      width: 48,
+                      alignment: pw.Alignment.centerRight,
+                      child: pw.Image(
+                        pw.MemoryImage(inspectorSignature),
+                        fit: pw.BoxFit.contain,
+                      ),
                     ),
                 ],
               ),
@@ -923,21 +946,36 @@ class PdfGeneratorService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.RichText(
-                    text: pw.TextSpan(
-                      children: [
-                        pw.TextSpan(text: 'Engineer / Supervisor: ', style: pw.TextStyle(fontSize: 7.5, font: fontBold)),
-                        pw.TextSpan(
-                          text: supervisorName.isNotEmpty ? supervisorName : 'Section Head',
-                          style: pw.TextStyle(fontSize: 7.5, font: fontRegular),
-                        ),
-                      ],
+                  pw.Expanded(
+                    child: pw.RichText(
+                      text: pw.TextSpan(
+                        children: [
+                          pw.TextSpan(text: 'Engineer / Supervisor: ', style: pw.TextStyle(fontSize: 7.5, font: fontBold)),
+                          pw.TextSpan(
+                            text: supervisorName.isNotEmpty ? supervisorName : 'Section Head',
+                            style: pw.TextStyle(fontSize: 7.5, font: fontRegular),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   if (supervisorId.isNotEmpty)
-                    pw.Text(
-                      'Emp ID: $supervisorId',
-                      style: pw.TextStyle(fontSize: 7.5, font: fontBold, color: const PdfColor.fromInt(0xFF0284C7)),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+                      child: pw.Text(
+                        'Emp ID: $supervisorId',
+                        style: pw.TextStyle(fontSize: 7.5, font: fontBold, color: const PdfColor.fromInt(0xFF0284C7)),
+                      ),
+                    ),
+                  if (supervisorSignature != null)
+                    pw.Container(
+                      height: 18,
+                      width: 48,
+                      alignment: pw.Alignment.centerRight,
+                      child: pw.Image(
+                        pw.MemoryImage(supervisorSignature),
+                        fit: pw.BoxFit.contain,
+                      ),
                     ),
                 ],
               ),
@@ -1659,11 +1697,15 @@ class PdfGeneratorService {
       final isTop = locationType == 'Main Tank Top';
       final isOtherPt = locationType == 'Other';
 
+      final hasFurans = testsRequired.contains('Furanic Compounds');
+      final hasSulfur = testsRequired.contains('Corrosive Sulfur');
+      final hasPassivators = testsRequired.contains('Passivators');
+
       final isOQ = testName == 'Oil Quality Test (OQ)';
       final isDGA = testName == 'Dissolved Gas-in-Oil Analysis (DGA)';
-      final isFurans = testName == 'Furanic Compounds';
-      final isSulfur = testName == 'Corrosive Sulfur';
-      final isPassivators = testName == 'Passivators';
+      final isFurans = (isOQ && hasFurans) || testName == 'Furanic Compounds';
+      final isSulfur = (isOQ && hasSulfur) || testName == 'Corrosive Sulfur';
+      final isPassivators = (isOQ && hasPassivators) || testName == 'Passivators';
 
       final isCblR = otherSubLocation == 'CBL R';
       final isCblY = otherSubLocation == 'CBL Y';
@@ -2288,9 +2330,27 @@ class PdfGeneratorService {
     }
 
     // 2. Resolve tests required list (Item 3)
-    final List<String> resolvedTests = testsRequired.isNotEmpty
-        ? testsRequired.toList()
-        : ['Oil Quality Test (OQ)'];
+    final bool hasOQ = testsRequired.contains('Oil Quality Test (OQ)');
+    final List<String> resolvedTests = [];
+
+    if (testsRequired.isEmpty) {
+      resolvedTests.add('Oil Quality Test (OQ)');
+    } else {
+      for (final test in testsRequired) {
+        // If Oil Quality Test (OQ) is selected, Furanic Compounds, Corrosive Sulfur,
+        // and Passivators are printed directly on the OQ card and do NOT get their own separate card.
+        if (hasOQ &&
+            (test == 'Furanic Compounds' ||
+             test == 'Corrosive Sulfur' ||
+             test == 'Passivators')) {
+          continue;
+        }
+        resolvedTests.add(test);
+      }
+    }
+    if (resolvedTests.isEmpty) {
+      resolvedTests.add('Oil Quality Test (OQ)');
+    }
 
     // 3. Build all individual sample cards
     final List<pw.Widget> allCards = [];
@@ -2344,6 +2404,2338 @@ class PdfGeneratorService {
 
     return pdf.save();
   }
+
+  /// Generates the official "Sample Acknowledgement Form" (FM-GM-3200-001-001 / Form No. NGC_00064_FO_001)
+  static Future<Uint8List> generateSampleAcknowledgementPdf({
+    required String workOrder,
+    required String refNo,
+    required String selectedLab,
+    required String externalLabName,
+    required String ibmMaximoAssetNumber,
+    required String equipmentType,
+    required String equipmentTypeDetail,
+    required String cityName,
+    required String substationName,
+    required String manufacturer,
+    required String manufacturerYear,
+    required String equipmentOilTemp,
+    required String voltage,
+    required String capacity,
+    required String serialNo,
+    required String reasonOfSample,
+    required String otherReasonDetail,
+    required String reportSendTo,
+    required String sampleBy,
+    required String sampleDate,
+    required String receivedDate,
+    required Set<String> testsRequired,
+    required String senderName,
+    required String senderId,
+    required String senderSignature,
+    Uint8List? senderSignatureImage,
+    required String syringeCase,
+    required String bottleCase,
+    required String receivingDate,
+    required String sampleStatus,
+    required String remarks,
+    required String receivedBy,
+    required String employeeId,
+    required String receiverSignature,
+  }) async {
+    final pdf = pw.Document(
+      title: 'Sample Acknowledgement Form - FM-GM-3200-001-001',
+      author: 'National Grid SA',
+      creator: 'National Grid Maintenance Automation System',
+    );
+
+    final pw.Font fontRegular = pw.Font.helvetica();
+    final pw.Font fontBold = pw.Font.helveticaBold();
+    pw.Font? fontArabic;
+
+    // Load authentic Cairo font from assets first, with fallback to GoogleFonts
+    try {
+      final ByteData fontData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      fontArabic = pw.Font.ttf(fontData);
+    } catch (_) {
+      try {
+        final fontFile = File('assets/fonts/Cairo-Regular.ttf');
+        if (fontFile.existsSync()) {
+          fontArabic = pw.Font.ttf(fontFile.readAsBytesSync().buffer.asByteData());
+        }
+      } catch (_) {}
+    }
+
+    if (fontArabic == null) {
+      try {
+        fontArabic = await PdfGoogleFonts.cairoBold();
+      } catch (_) {
+        try {
+          fontArabic = await PdfGoogleFonts.amiriBold();
+        } catch (_) {}
+      }
+    }
+
+    // Arabic text reshaper helper to ensure proper letter joining and RTL support
+    final reshaper = ArabicReshaper();
+    String shapeArabic(String text) {
+      if (text.isEmpty) return text;
+      final hasArabic = RegExp(r'[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]').hasMatch(text);
+      if (!hasArabic) return text;
+      try {
+        return reshaper.reshape(text);
+      } catch (_) {
+        return text;
+      }
+    }
+
+    final safeCityName = shapeArabic(cityName);
+    final safeSubstationName = shapeArabic(substationName);
+    final safeEquipmentTypeDetail = shapeArabic(equipmentTypeDetail);
+    final safeOtherReasonDetail = shapeArabic(otherReasonDetail);
+    final safeReportSendTo = shapeArabic(reportSendTo);
+    final safeSampleBy = shapeArabic(sampleBy);
+    final safeSenderName = shapeArabic(senderName);
+    final safeSenderSignature = shapeArabic(senderSignature);
+    final safeRemarks = shapeArabic(remarks);
+    final safeReceivedBy = shapeArabic(receivedBy);
+    final safeReceiverSignature = shapeArabic(receiverSignature);
+    final safeExternalLabName = shapeArabic(externalLabName);
+    final safeManufacturer = shapeArabic(manufacturer);
+    final safeWorkOrder = shapeArabic(workOrder);
+    final safeRefNo = shapeArabic(refNo);
+    final safeIbmMaximoAssetNumber = shapeArabic(ibmMaximoAssetNumber);
+    final safeManufacturerYear = shapeArabic(manufacturerYear);
+    final safeEquipmentOilTemp = shapeArabic(equipmentOilTemp);
+    final safeVoltage = shapeArabic(voltage);
+    final safeCapacity = shapeArabic(capacity);
+    final safeSerialNo = shapeArabic(serialNo);
+    final safeSampleDate = shapeArabic(sampleDate);
+    final safeReceivedDate = shapeArabic(receivedDate);
+    final safeSenderId = shapeArabic(senderId);
+    final safeSyringeCase = shapeArabic(syringeCase);
+    final safeBottleCase = shapeArabic(bottleCase);
+    final safeReceivingDate = shapeArabic(receivingDate);
+    final safeEmployeeId = shapeArabic(employeeId);
+
+    // Load authentic National Grid SA logo image from assets
+    pw.ImageProvider? logoImage;
+    try {
+      final ByteData data = await rootBundle.load('assets/images/national_grid_logo.jpg');
+      logoImage = pw.MemoryImage(data.buffer.asUint8List());
+    } catch (_) {
+      try {
+        final file = File('assets/images/national_grid_logo.jpg');
+        if (file.existsSync()) {
+          logoImage = pw.MemoryImage(file.readAsBytesSync());
+        }
+      } catch (_) {}
+    }
+
+    final borderColor = PdfColor.fromHex('#a5bfdb');
+    final darkBlue = PdfColor.fromHex('#114891');
+    final pillBlue = PdfColor.fromHex('#2e5b9a');
+    final subheaderBg = PdfColor.fromHex('#cfe0ed');
+    final formRed = PdfColor.fromHex('#ed302c');
+    final greenInternal = PdfColor.fromHex('#008004');
+
+    final String reshapedPublicInternal = shapeArabic('عام (داخلي)');
+
+    // Public Internal mark widget with full bilingual Arabic and English support
+    pw.Widget buildPublicInternalMark() {
+      return pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Row(
+            mainAxisSize: pw.MainAxisSize.min,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Text(
+                'Public Internal - ',
+                style: pw.TextStyle(
+                  fontSize: 8,
+                  font: fontBold,
+                  color: greenInternal,
+                ),
+              ),
+              pw.Text(
+                reshapedPublicInternal,
+                style: pw.TextStyle(
+                  fontSize: 8,
+                  font: fontArabic ?? fontBold,
+                  color: greenInternal,
+                ),
+                textDirection: pw.TextDirection.rtl,
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // Checkbox widget helper
+    pw.Widget buildPdfCheckbox(bool checked, {double size = 8.0}) {
+      return pw.Container(
+        width: size,
+        height: size,
+        margin: const pw.EdgeInsets.only(right: 3.5),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.black, width: 0.7),
+        ),
+        child: checked
+            ? pw.CustomPaint(
+                size: PdfPoint(size, size),
+                painter: (PdfGraphics canvas, PdfPoint pSize) {
+                  canvas
+                    ..setColor(PdfColors.black)
+                    ..setLineWidth(1.0)
+                    ..moveTo(pSize.x * 0.18, pSize.y * 0.48)
+                    ..lineTo(pSize.x * 0.42, pSize.y * 0.18)
+                    ..lineTo(pSize.x * 0.85, pSize.y * 0.82)
+                    ..strokePath();
+                },
+              )
+            : null,
+      );
+    }
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        theme: pw.ThemeData.withFont(
+          base: fontRegular,
+          bold: fontBold,
+          fontFallback: fontArabic != null ? [fontArabic] : [],
+        ),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              // Top Public Internal mark
+              buildPublicInternalMark(),
+              pw.SizedBox(height: 52),
+
+              // Header Row: Dept & Div (Left) | Pill Title (Center) | National Grid Logo (Right)
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  // Left: Maintenance Services Department / Labs Operations Division
+                  pw.Expanded(
+                    flex: 162,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Maintenance Services',
+                          style: pw.TextStyle(
+                            fontSize: 10.5,
+                            font: fontBold,
+                            color: darkBlue,
+                          ),
+                        ),
+                        pw.Text(
+                          'Department',
+                          style: pw.TextStyle(
+                            fontSize: 10.5,
+                            font: fontBold,
+                            color: darkBlue,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Labs Operations Division',
+                          style: pw.TextStyle(
+                            fontSize: 9.5,
+                            font: fontBold,
+                            color: darkBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Center: Capsule banner
+                  pw.Expanded(
+                    flex: 216,
+                    child: pw.Center(
+                      child: pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: pw.BoxDecoration(
+                          color: pillBlue,
+                          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(16)),
+                        ),
+                        child: pw.Text(
+                          'Sample Acknowledgement Form',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            font: fontBold,
+                            color: PdfColors.white,
+                          ),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Right: National Grid SA Logo
+                  pw.Expanded(
+                    flex: 173,
+                    child: pw.Align(
+                      alignment: pw.Alignment.centerRight,
+                      child: logoImage != null
+                          ? pw.Image(logoImage, height: 42, fit: pw.BoxFit.contain)
+                          : pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.end,
+                              children: [
+                                pw.Text(
+                                  'National Grid SA',
+                                  style: pw.TextStyle(
+                                    fontSize: 11,
+                                    font: fontBold,
+                                    color: darkBlue,
+                                  ),
+                                ),
+                                pw.Text(
+                                  shapeArabic('نقل الكهرباء'),
+                                  style: pw.TextStyle(
+                                    fontSize: 9.5,
+                                    font: fontArabic ?? fontBold,
+                                    color: darkBlue,
+                                  ),
+                                  textDirection: pw.TextDirection.rtl,
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 70),
+
+              // Subheader Bar: SAMPLE INFORMATION | FM-GM-3200-001-001 | Form No. NGC_00064_FO_001
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  color: subheaderBg,
+                  border: pw.Border.all(color: borderColor, width: 1.0),
+                ),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'SAMPLE INFORMATION',
+                      style: pw.TextStyle(
+                        fontSize: 9.5,
+                        font: fontBold,
+                        color: darkBlue,
+                      ),
+                    ),
+                    pw.Text(
+                      'FM-GM-3200-001-001',
+                      style: pw.TextStyle(
+                        fontSize: 9.5,
+                        font: fontBold,
+                        color: darkBlue,
+                      ),
+                    ),
+                    pw.RichText(
+                      text: pw.TextSpan(
+                        children: [
+                          pw.TextSpan(
+                            text: 'Form No. ',
+                            style: pw.TextStyle(fontSize: 8.5, font: fontBold, color: formRed),
+                          ),
+                          pw.TextSpan(
+                            text: 'NGC_00064_FO_001',
+                            style: pw.TextStyle(fontSize: 8.5, font: fontBold, color: formRed),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Main Table 1: SAMPLE INFORMATION (Columns: 162 : 216 : 173)
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border(
+                    left: pw.BorderSide(color: borderColor, width: 1.0),
+                    right: pw.BorderSide(color: borderColor, width: 1.0),
+                    bottom: pw.BorderSide(color: borderColor, width: 1.0),
+                  ),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    // ROW 1: Work Order | Lab | Ref No
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          // Col 1: Work Order (flex 162)
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Work Order: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeWorkOrder, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Col 2: Lab (flex 216)
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Row(
+                                    children: [
+                                      pw.Text('Lab: ', style: pw.TextStyle(fontSize: 7.5, font: fontBold)),
+                                      buildPdfCheckbox(selectedLab == 'RYD', size: 7.5),
+                                      pw.Text('RYD ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(selectedLab == 'JED', size: 7.5),
+                                      pw.Text('JED ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(selectedLab == 'DMM', size: 7.5),
+                                      pw.Text('DMM ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(selectedLab == 'QSM', size: 7.5),
+                                      pw.Text('QSM', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+                                  pw.Row(
+                                    children: [
+                                      pw.SizedBox(width: 22),
+                                      buildPdfCheckbox(selectedLab == 'ABH', size: 7.5),
+                                      pw.Text('ABH ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(selectedLab == 'EXTERNAL', size: 7.5),
+                                      pw.Text('EXTERNAL ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            selectedLab == 'EXTERNAL' ? safeExternalLabName : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          // Col 3: Ref No (flex 173)
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Ref No: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeRefNo, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ROW 2: Middle Block (Left side 378 pt + Right side 173 pt)
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          // Left Side (flex 378): IBM-Maximo, City/SS, Manufacturer/Year
+                          pw.Expanded(
+                            flex: 378,
+                            child: pw.Container(
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                                children: [
+                                  // Sub-row 1: IBM-Maximo Asset Number
+                                  pw.Container(
+                                    padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                    decoration: pw.BoxDecoration(
+                                      border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                                    ),
+                                    child: pw.RichText(
+                                      text: pw.TextSpan(
+                                        children: [
+                                          pw.TextSpan(text: 'IBM-Maximo Asset Number: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                          pw.TextSpan(text: safeIbmMaximoAssetNumber, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Sub-row 2: City Name (flex 162) & S/S (Name/ID) (flex 216)
+                                  pw.Container(
+                                    decoration: pw.BoxDecoration(
+                                      border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                                    ),
+                                    child: pw.Row(
+                                      children: [
+                                        pw.Expanded(
+                                          flex: 162,
+                                          child: pw.Container(
+                                            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                            decoration: pw.BoxDecoration(
+                                              border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                                            ),
+                                            child: pw.RichText(
+                                              text: pw.TextSpan(
+                                                children: [
+                                                  pw.TextSpan(text: 'City Name: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                                  pw.TextSpan(text: safeCityName, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        pw.Expanded(
+                                          flex: 216,
+                                          child: pw.Container(
+                                            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                            child: pw.RichText(
+                                              text: pw.TextSpan(
+                                                children: [
+                                                  pw.TextSpan(text: 'S/S (Name/ID): ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                                  pw.TextSpan(text: safeSubstationName, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  // Sub-row 3: Manufacturer (flex 162) & Manufacturer Year (flex 216)
+                                  pw.Container(
+                                    child: pw.Row(
+                                      children: [
+                                        pw.Expanded(
+                                          flex: 162,
+                                          child: pw.Container(
+                                            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                            decoration: pw.BoxDecoration(
+                                              border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                                            ),
+                                            child: pw.RichText(
+                                              text: pw.TextSpan(
+                                                children: [
+                                                  pw.TextSpan(text: 'Manufacturer: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                                  pw.TextSpan(text: safeManufacturer, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        pw.Expanded(
+                                          flex: 216,
+                                          child: pw.Container(
+                                            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                            child: pw.RichText(
+                                              text: pw.TextSpan(
+                                                children: [
+                                                  pw.TextSpan(text: 'Manufacturer Year: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                                  pw.TextSpan(text: safeManufacturerYear, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          // Right Side (flex 173): Equipment Type Checkboxes
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('Equipment Type:', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                  pw.SizedBox(height: 2),
+
+                                  // Transformer
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(equipmentType == 'Transformer', size: 7.5),
+                                      pw.Text('Transformer ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            equipmentType == 'Transformer' ? safeEquipmentTypeDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+
+                                  // Reactor
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(equipmentType == 'Reactor', size: 7.5),
+                                      pw.Text('Reactor ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            equipmentType == 'Reactor' ? safeEquipmentTypeDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+
+                                  // Cable
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(equipmentType == 'Cable', size: 7.5),
+                                      pw.Text('Cable ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            equipmentType == 'Cable' ? safeEquipmentTypeDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+
+                                  // UG cable
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(equipmentType == 'UG cable', size: 7.5),
+                                      pw.Text('UG cable ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            equipmentType == 'UG cable' ? safeEquipmentTypeDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+
+                                  // OLTC
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(equipmentType == 'OLTC', size: 7.5),
+                                      pw.Text('OLTC ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            equipmentType == 'OLTC' ? safeEquipmentTypeDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+
+                                  // Others
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(equipmentType == 'Others', size: 7.5),
+                                      pw.Text('Others ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            equipmentType == 'Others' ? safeEquipmentTypeDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ROW 3: Equipment Oil Temp | Voltage | Capacity (flex 162 : 216 : 173)
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        children: [
+                          // Col 1 (flex 162): Equipment Oil Temp
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                mainAxisSize: pw.MainAxisSize.min,
+                                children: [
+                                  pw.Text('Equipment Oil Temp.:', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                  pw.SizedBox(height: 1),
+                                  pw.Text(
+                                    safeEquipmentOilTemp.isNotEmpty ? '$safeEquipmentOilTemp °C' : '°C',
+                                    style: pw.TextStyle(fontSize: 8, font: fontRegular),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          // Col 2 (flex 216): Voltage
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.Row(
+                                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.RichText(
+                                    text: pw.TextSpan(
+                                      children: [
+                                        pw.TextSpan(text: 'Voltage: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                        pw.TextSpan(text: safeVoltage, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                      ],
+                                    ),
+                                  ),
+                                  pw.Text('KV', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          // Col 3 (flex 173): Capacity
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                              child: pw.Row(
+                                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.RichText(
+                                    text: pw.TextSpan(
+                                      children: [
+                                        pw.TextSpan(text: 'Capacity: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                        pw.TextSpan(text: safeCapacity, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                      ],
+                                    ),
+                                  ),
+                                  pw.Text('MVA', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ROW 4: Serial No | Reason of Sample | Report send to (flex 162 : 216 : 173)
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          // Col 1 (flex 162): Serial No
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Serial No: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeSerialNo, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Col 2 (flex 216): Reason of Sample
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('Reason of Sample:', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                  pw.SizedBox(height: 2),
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(reasonOfSample.toLowerCase() == 'annual', size: 7.5),
+                                      pw.Text('Annual ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(reasonOfSample == 'PM', size: 7.5),
+                                      pw.Text('PM ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(reasonOfSample == 'CM', size: 7.5),
+                                      pw.Text('CM ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(reasonOfSample == 'A/F filtration', size: 7.5),
+                                      pw.Text('A/F filtration', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                    ],
+                                  ),
+                                  pw.SizedBox(height: 2),
+                                  pw.Row(
+                                    children: [
+                                      buildPdfCheckbox(reasonOfSample == 'Failure', size: 7.5),
+                                      pw.Text('Failure ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      buildPdfCheckbox(reasonOfSample == 'Other', size: 7.5),
+                                      pw.Text('Other ', style: pw.TextStyle(fontSize: 7, font: fontRegular)),
+                                      pw.Expanded(
+                                        child: pw.Container(
+                                          decoration: const pw.BoxDecoration(
+                                            border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                                          ),
+                                          child: pw.Text(
+                                            reasonOfSample == 'Other' ? safeOtherReasonDetail : '',
+                                            style: pw.TextStyle(fontSize: 7, font: fontRegular),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          // Col 3 (flex 173): Report send to
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('Report send to:', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                  pw.SizedBox(height: 2),
+                                  pw.Text(safeReportSendTo, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ROW 5: Sample By | Sample Date | Received Date (flex 162 : 216 : 173)
+                    pw.Container(
+                      child: pw.Row(
+                        children: [
+                          // Col 1 (flex 162): Sample By
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Sample By: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeSampleBy, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Col 2 (flex 216): Sample Date
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Sample Date: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeSampleDate, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Col 3 (flex 173): Received Date
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Received Date: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeReceivedDate, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 27),
+
+              // SECTION 2: TESTS REQUIRED (4 columns across)
+              pw.Text(
+                'TESTS REQUIRED',
+                style: pw.TextStyle(
+                  fontSize: 9.5,
+                  font: fontBold,
+                  color: darkBlue,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: borderColor, width: 1.0),
+                ),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: pw.Column(
+                  children: [
+                    // Row 1
+                    pw.Row(
+                      children: [
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('Quality Test'), size: 8),
+                              pw.Text('Quality Test', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('D.G.A'), size: 8),
+                              pw.Text('D.G.A', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('SF-6'), size: 8),
+                              pw.Text('SF-6', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('Breakdown & Water'), size: 8),
+                              pw.Text('Breakdown & Water', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    pw.SizedBox(height: 4),
+
+                    // Row 2
+                    pw.Row(
+                      children: [
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('D.B.D.S'), size: 8),
+                              pw.Text('D.B.D.S', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('Corrosive'), size: 8),
+                              pw.Text('Corrosive', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('Furanic'), size: 8),
+                              pw.Text('Furanic', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              buildPdfCheckbox(testsRequired.contains('Passivator'), size: 8),
+                              pw.Text('Passivator', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (testsRequired.contains('MeOHc')) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        children: [
+                          pw.Expanded(
+                            child: pw.Row(
+                              children: [
+                                buildPdfCheckbox(testsRequired.contains('MeOHc'), size: 8),
+                                pw.Text('MeOHc', style: pw.TextStyle(fontSize: 7.5, font: fontRegular)),
+                              ],
+                            ),
+                          ),
+                          pw.Expanded(child: pw.SizedBox()),
+                          pw.Expanded(child: pw.SizedBox()),
+                          pw.Expanded(child: pw.SizedBox()),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 27),
+
+              // SECTION 3: RECEIVING SAMPLE (Columns: 162 : 216 : 173)
+              pw.Text(
+                'RECEIVING SAMPLE',
+                style: pw.TextStyle(
+                  fontSize: 9.5,
+                  font: fontBold,
+                  color: darkBlue,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: borderColor, width: 1.0),
+                ),
+                child: pw.Column(
+                  children: [
+                    // Row 1: Sender Name | Sender ID | Signature (flex 162 : 216 : 173)
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        children: [
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Sender Name: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeSenderName, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Sender ID: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeSenderId, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              child: senderSignatureImage != null
+                                  ? pw.Row(
+                                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                                      children: [
+                                        pw.Text('Signature: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                        pw.SizedBox(width: 4),
+                                        pw.Expanded(
+                                          child: pw.Container(
+                                            height: 16,
+                                            alignment: pw.Alignment.centerLeft,
+                                            child: pw.Image(
+                                              pw.MemoryImage(senderSignatureImage),
+                                              fit: pw.BoxFit.contain,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : pw.RichText(
+                                      text: pw.TextSpan(
+                                        children: [
+                                          pw.TextSpan(text: 'Signature: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                          pw.TextSpan(text: safeSenderSignature, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                        ],
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Row 2: Syringe case | bottle case | Date (flex 162 : 216 : 173)
+                    pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        children: [
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Syringe case: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeSyringeCase, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'bottle case: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeBottleCase, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Date: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeReceivingDate, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Row 3: Received / Rejected
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        children: [
+                          pw.Expanded(
+                            flex: 378,
+                            child: pw.Row(
+                              children: [
+                                buildPdfCheckbox(sampleStatus == 'Received', size: 8),
+                                pw.Text('Received', style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                              ],
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Row(
+                              children: [
+                                buildPdfCheckbox(sampleStatus == 'Rejected', size: 8),
+                                pw.Text('Rejected', style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Row 4: Remarks
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: borderColor, width: 0.6)),
+                      ),
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('Remarks: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                          pw.Expanded(
+                            child: pw.Text(safeRemarks, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Row 5: Received by | Employee ID | Signature (flex 162 : 216 : 173)
+                    pw.Container(
+                      child: pw.Row(
+                        children: [
+                          pw.Expanded(
+                            flex: 162,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Received by: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeReceivedBy, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 216,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: borderColor, width: 0.6)),
+                              ),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Employee ID: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeEmployeeId, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 173,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: pw.RichText(
+                                text: pw.TextSpan(
+                                  children: [
+                                    pw.TextSpan(text: 'Signature: ', style: pw.TextStyle(fontSize: 8, font: fontBold)),
+                                    pw.TextSpan(text: safeReceiverSignature, style: pw.TextStyle(fontSize: 8, font: fontRegular)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.Spacer(flex: 1),
+
+              // Bottom Public Internal mark
+              buildPublicInternalMark(),
+            ],
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  /// Generates the Official 3-Page National Grid SA "Checklist for Mineral Oil Power Transformers and Reactors Annual Detail Inspection"
+  /// Form Code: CL-GM-1600-004-002 (Rev 00)
+  static Future<Uint8List> generateAnnualDetailInspectionPdf({
+    required AnnualDetailInspectionModel inspection,
+    Uint8List? inspectorSignatureBytes,
+    Uint8List? checkerSignatureBytes,
+  }) async {
+    final pdf = pw.Document(
+      title: 'CL-GM-1600-004-002 Annual Detail Inspection',
+      author: 'National Grid SA',
+      creator: 'National Grid Maintenance Automation System',
+    );
+
+    final pw.Font fontRegular = pw.Font.helvetica();
+    final pw.Font fontBold = pw.Font.helveticaBold();
+
+    // Load authentic Cairo font from assets first, with fallback to GoogleFonts
+    pw.Font? fontArabic;
+    try {
+      final ByteData fontData =
+          await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      fontArabic = pw.Font.ttf(fontData);
+    } catch (_) {
+      try {
+        final fontFile = File('assets/fonts/Cairo-Regular.ttf');
+        if (fontFile.existsSync()) {
+          fontArabic =
+              pw.Font.ttf(fontFile.readAsBytesSync().buffer.asByteData());
+        }
+      } catch (_) {}
+    }
+
+    if (fontArabic == null) {
+      try {
+        fontArabic = await PdfGoogleFonts.cairoBold();
+      } catch (_) {
+        try {
+          fontArabic = await PdfGoogleFonts.amiriBold();
+        } catch (_) {}
+      }
+    }
+
+    // Punctuation and symbol sanitization & Arabic text reshaper helper
+    final reshaper = ArabicReshaper();
+
+    String sanitizeText(String text) {
+      if (text.isEmpty) return text;
+      return text
+          .replaceAll('✓', 'OK')
+          .replaceAll('✔', 'OK')
+          .replaceAll('☑', 'OK');
+    }
+
+    String shapeArabic(String text) {
+      if (text.isEmpty) return text;
+      final cleaned = sanitizeText(text);
+      final hasArabic = RegExp(
+              r'[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]')
+          .hasMatch(cleaned);
+      if (!hasArabic) return cleaned;
+      String reshaped;
+      try {
+        reshaped = reshaper.reshape(cleaned);
+      } catch (_) {
+        reshaped = cleaned;
+      }
+
+      // Map isolated presentation forms (U+FE80..U+FEF4) to standard Unicode Arabic (U+0621..U+064A)
+      // to ensure 100% compatibility with TrueType fonts (like Cairo) where isolated forms are at base code points
+      const isolatedMap = {
+        0xFE80: 0x0621, // Hamza
+        0xFE81: 0x0622, // Alef with madda
+        0xFE83: 0x0623, // Alef with hamza above
+        0xFE85: 0x0624, // Waw with hamza
+        0xFE87: 0x0625, // Alef with hamza below
+        0xFE89: 0x0626, // Yeh with hamza
+        0xFE8D: 0x0627, // Alef
+        0xFE8F: 0x0628, // Beh
+        0xFE93: 0x0629, // Teh marbuta
+        0xFE95: 0x062A, // Teh
+        0xFE99: 0x062B, // Theh
+        0xFE9D: 0x062C, // Jeem
+        0xFEA1: 0x062D, // Hah
+        0xFEA5: 0x062E, // Khah
+        0xFEA9: 0x062F, // Dal
+        0xFEAB: 0x0630, // Thal
+        0xFEAD: 0x0631, // Reh
+        0xFEAF: 0x0632, // Zain
+        0xFEB1: 0x0633, // Seen
+        0xFEB5: 0x0634, // Sheen
+        0xFEB9: 0x0635, // Sad
+        0xFEBD: 0x0636, // Dad
+        0xFEC1: 0x0637, // Tah
+        0xFEC5: 0x0638, // Zah
+        0xFEC9: 0x0639, // Ain
+        0xFECD: 0x063A, // Ghain
+        0xFED1: 0x0641, // Feh
+        0xFED5: 0x0642, // Qaf
+        0xFED9: 0x0643, // Kaf
+        0xFEDD: 0x0644, // Lam
+        0xFEE1: 0x0645, // Meem
+        0xFEE5: 0x0646, // Noon
+        0xFEE9: 0x0647, // Heh
+        0xFEED: 0x0648, // Waw
+        0xFEEF: 0x0649, // Alef Maksura
+        0xFEF1: 0x064A, // Yeh
+      };
+
+      final buffer = StringBuffer();
+      for (final codeUnit in reshaped.runes) {
+        final mapped = isolatedMap[codeUnit];
+        buffer.writeCharCode(mapped ?? codeUnit);
+      }
+      return buffer.toString();
+    }
+
+    // Load authentic National Grid SA logo image
+    pw.ImageProvider? logoImage;
+    try {
+      final ByteData data =
+          await rootBundle.load('assets/images/national_grid_logo.jpg');
+      logoImage = pw.MemoryImage(data.buffer.asUint8List());
+    } catch (_) {
+      try {
+        final file = File('assets/images/national_grid_logo.jpg');
+        if (file.existsSync()) {
+          logoImage = pw.MemoryImage(file.readAsBytesSync());
+        }
+      } catch (_) {}
+    }
+
+    const PdfColor black = PdfColors.black;
+    final PdfColor blueHeading = PdfColor.fromHex('#0000FF');
+    final PdfColor greenInternal = PdfColor.fromHex('#008004');
+    final PdfColor linkBlue = PdfColor.fromHex('#0000EE');
+    final PdfColor tableHeaderBg = PdfColor.fromHex('#DCE6F1');
+
+    pw.Widget buildSafeText(
+      String text, {
+      double fontSize = 9.5,
+      pw.Font? font,
+      PdfColor color = PdfColors.black,
+      pw.TextAlign align = pw.TextAlign.left,
+    }) {
+      if (text.isEmpty) return pw.SizedBox();
+      final cleaned = sanitizeText(text);
+      final hasArabic = RegExp(
+              r'[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]')
+          .hasMatch(cleaned);
+      final hasNonAscii = cleaned.codeUnits.any((c) => c > 127);
+      final shaped = hasArabic ? shapeArabic(cleaned) : cleaned;
+      final useArabicFont = (hasArabic || hasNonAscii) && fontArabic != null;
+
+      return pw.Text(
+        shaped,
+        textAlign: align,
+        textDirection: hasArabic ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+        style: pw.TextStyle(
+          fontSize: fontSize,
+          font: useArabicFont ? fontArabic : (font ?? fontRegular),
+          fontFallback: fontArabic != null ? [fontArabic] : const [],
+          color: color,
+        ),
+      );
+    }
+
+    pw.Widget buildPdfCheckbox(bool checked, {double size = 9.0}) {
+      return pw.Container(
+        width: size,
+        height: size,
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.black, width: 0.8),
+        ),
+        child: checked
+            ? pw.CustomPaint(
+                size: PdfPoint(size, size),
+                painter: (PdfGraphics canvas, PdfPoint pSize) {
+                  canvas
+                    ..setColor(PdfColors.black)
+                    ..setLineWidth(1.1)
+                    ..moveTo(pSize.x * 0.18, pSize.y * 0.48)
+                    ..lineTo(pSize.x * 0.42, pSize.y * 0.18)
+                    ..lineTo(pSize.x * 0.85, pSize.y * 0.82)
+                    ..strokePath();
+                },
+              )
+            : null,
+      );
+    }
+
+    pw.Widget buildTopPublicBanner() {
+      return pw.Container(
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.start,
+          children: [
+            pw.Text(
+              'Public Internal - ',
+              style: pw.TextStyle(
+                  fontSize: 8.5, font: fontBold, color: greenInternal),
+            ),
+            pw.Text(
+              shapeArabic('عام (داخلي)'),
+              style: pw.TextStyle(
+                  fontSize: 8.5,
+                  font: fontArabic ?? fontBold,
+                  color: greenInternal),
+              textDirection: pw.TextDirection.rtl,
+            ),
+          ],
+        ),
+      );
+    }
+
+    pw.Widget buildBottomFooterBanner() {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Center(
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text(
+                  'Policies and Procedures Management System Website: ',
+                  style: pw.TextStyle(
+                      fontSize: 8.0,
+                      font: fontRegular,
+                      color: PdfColors.black),
+                ),
+                pw.Text(
+                  'http://ngridsa-apps/amas/',
+                  style: pw.TextStyle(
+                    fontSize: 8.0,
+                    font: fontRegular,
+                    color: linkBlue,
+                    decoration: pw.TextDecoration.underline,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 2.0),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Public Internal - ',
+                style: pw.TextStyle(
+                    fontSize: 8.5, font: fontBold, color: greenInternal),
+              ),
+              pw.Text(
+                shapeArabic('عام (داخلي)'),
+                style: pw.TextStyle(
+                    fontSize: 8.5,
+                    font: fontArabic ?? fontBold,
+                    color: greenInternal),
+                textDirection: pw.TextDirection.rtl,
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    pw.Widget buildOfficialHeader(int pageNum) {
+      return pw.Container(
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: black, width: 1.2),
+        ),
+        child: pw.Column(
+          children: [
+            // Top Row of Header: Logo (flex 38) | GRID MAINTENANCE (flex 62)
+            pw.Container(
+              height: 38,
+              decoration: const pw.BoxDecoration(
+                border:
+                    pw.Border(bottom: pw.BorderSide(color: black, width: 1.0)),
+              ),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Expanded(
+                    flex: 38,
+                    child: pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      alignment: pw.Alignment.centerLeft,
+                      child: logoImage != null
+                          ? pw.Image(logoImage,
+                              height: 34, fit: pw.BoxFit.contain)
+                          : pw.Row(
+                              children: [
+                                pw.Column(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.center,
+                                  crossAxisAlignment:
+                                      pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(
+                                      shapeArabic('نقل الكهرباء'),
+                                      style: pw.TextStyle(
+                                          fontSize: 9.5,
+                                          font: fontArabic ?? fontBold,
+                                          color: PdfColors.blue900),
+                                      textDirection: pw.TextDirection.rtl,
+                                    ),
+                                    pw.Text(
+                                      'National Grid SA',
+                                      style: pw.TextStyle(
+                                          fontSize: 8.0,
+                                          font: fontBold,
+                                          color: PdfColors.red700),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  pw.Container(width: 1.0, color: black),
+                  pw.Expanded(
+                    flex: 62,
+                    child: pw.Center(
+                      child: pw.Text(
+                        'GRID MAINTENANCE',
+                        style: pw.TextStyle(
+                            fontSize: 12.5,
+                            font: fontBold,
+                            letterSpacing: 0.8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Bottom Row of Header: Title (flex 68) | Index Box (flex 32)
+            pw.Container(
+              height: 36,
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Expanded(
+                    flex: 68,
+                    child: pw.Center(
+                      child: pw.Column(
+                        mainAxisAlignment: pw.MainAxisAlignment.center,
+                        children: [
+                          pw.Text(
+                            'Checklist for Mineral Oil Power Transformers',
+                            style: pw.TextStyle(fontSize: 8.5, font: fontBold),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                          pw.SizedBox(height: 1.0),
+                          pw.Text(
+                            'and Reactors Annual Detail Inspection',
+                            style: pw.TextStyle(fontSize: 8.5, font: fontBold),
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  pw.Container(width: 1.0, color: black),
+                  pw.Expanded(
+                    flex: 32,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                      children: [
+                        // Index Number
+                        pw.Expanded(
+                          child: pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(
+                                horizontal: 3, vertical: 1),
+                            child: pw.Column(
+                              mainAxisAlignment:
+                                  pw.MainAxisAlignment.center,
+                              children: [
+                                pw.Text('Index Number:',
+                                    style: pw.TextStyle(
+                                        fontSize: 6.8, font: fontRegular)),
+                                pw.Text('CL-GM-1600-004-002',
+                                    style: pw.TextStyle(
+                                        fontSize: 8.0, font: fontBold)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        pw.Container(height: 0.8, color: black),
+                        // Revision & Page Number
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: [
+                              pw.Expanded(
+                                child: pw.Column(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.center,
+                                  children: [
+                                    pw.Text('Revision Number:',
+                                        style: pw.TextStyle(
+                                            fontSize: 6.5,
+                                            font: fontRegular)),
+                                    pw.Text('00',
+                                        style: pw.TextStyle(
+                                            fontSize: 8.0, font: fontBold)),
+                                  ],
+                                ),
+                              ),
+                              pw.Container(width: 0.8, color: black),
+                              pw.Expanded(
+                                child: pw.Column(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.center,
+                                  children: [
+                                    pw.Text('Page Number:',
+                                        style: pw.TextStyle(
+                                            fontSize: 6.5,
+                                            font: fontRegular)),
+                                    pw.Text('$pageNum of 3',
+                                        style: pw.TextStyle(
+                                            fontSize: 8.0, font: fontBold)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pw.TableRow buildSectionATableRow(
+      String label1,
+      String val1,
+      String label2,
+      String val2,
+    ) {
+      return pw.TableRow(
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1.8),
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Text(
+              label1,
+              style: pw.TextStyle(fontSize: 7.8, font: fontRegular),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1.8),
+            alignment: pw.Alignment.centerLeft,
+            child: buildSafeText(
+              val1.isNotEmpty ? val1 : '',
+              fontSize: 8.8,
+              font: fontBold,
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1.8),
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Text(
+              label2,
+              style: pw.TextStyle(fontSize: 7.8, font: fontRegular),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1.8),
+            alignment: pw.Alignment.centerLeft,
+            child: buildSafeText(
+              val2.isNotEmpty ? val2 : '',
+              fontSize: 8.8,
+              font: fontBold,
+            ),
+          ),
+        ],
+      );
+    }
+
+    pw.Widget buildGeneralInfoBlock() {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 3.0),
+            child: pw.Text(
+              'A.    General Information',
+              style: pw.TextStyle(
+                  fontSize: 11.5, font: fontBold, color: blueHeading),
+            ),
+          ),
+          pw.Table(
+            border: pw.TableBorder.all(color: black, width: 0.6),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.35),
+              1: pw.FlexColumnWidth(2.0),
+              2: pw.FlexColumnWidth(1.35),
+              3: pw.FlexColumnWidth(2.0),
+            },
+            children: [
+              buildSectionATableRow(
+                'Division',
+                inspection.division,
+                'Department',
+                inspection.department,
+              ),
+              buildSectionATableRow(
+                'Work Order No.',
+                inspection.workOrderNo,
+                'Work Group',
+                inspection.workGroup,
+              ),
+              buildSectionATableRow(
+                'Substation',
+                inspection.substation,
+                'Location',
+                inspection.location,
+              ),
+              buildSectionATableRow(
+                'Transformer Designation',
+                inspection.transformerDesignation,
+                'Manufacturer',
+                inspection.manufacturer,
+              ),
+              buildSectionATableRow(
+                'Make / Type',
+                inspection.makeType,
+                'MVA Rating',
+                inspection.mvaRating,
+              ),
+              buildSectionATableRow(
+                'Voltage Ratio',
+                inspection.voltageRatio,
+                'Type of Connection HV Side (Air Bushing, Oil-to-Oil Cable Box, GIB)',
+                inspection.typeConnectionHv,
+              ),
+              buildSectionATableRow(
+                'Type of Connection LV Side (Air Cable Box, Oil-to-Oil Cable Box, GIB, Outdoor Bushings)',
+                inspection.typeConnectionLv,
+                'Type of Connection TV Side (Air Cable Box, Oil-to-Oil Cable Box, GIB, Outdoor Bushings)',
+                inspection.typeConnectionTv,
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    pw.TableRow buildTableHeaderTableRow() {
+      return pw.TableRow(
+        decoration: pw.BoxDecoration(color: tableHeaderBg),
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 3),
+            alignment: pw.Alignment.center,
+            child: pw.Text('Item',
+                style: pw.TextStyle(fontSize: 8.8, font: fontBold),
+                textAlign: pw.TextAlign.center),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2.5),
+            alignment: pw.Alignment.center,
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text('Inspection description',
+                    style: pw.TextStyle(
+                        fontSize: 9.2,
+                        font: fontBold,
+                        color: blueHeading)),
+                pw.SizedBox(height: 1),
+                pw.Text(
+                  'with reference WI-GM-160-004-001 Work Instructions on Preventive Maintenance Program for Mineral Oil Immersed Power Transformers and Reactors',
+                  style: pw.TextStyle(
+                      fontSize: 7.2,
+                      font: fontRegular,
+                      color: PdfColors.black),
+                  textAlign: pw.TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 3),
+            alignment: pw.Alignment.center,
+            child: pw.Text('Done',
+                style: pw.TextStyle(fontSize: 8.8, font: fontBold),
+                textAlign: pw.TextAlign.center),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 3),
+            alignment: pw.Alignment.center,
+            child: pw.Text('Remarks',
+                style: pw.TextStyle(fontSize: 8.8, font: fontBold),
+                textAlign: pw.TextAlign.center),
+          ),
+        ],
+      );
+    }
+
+    pw.TableRow buildItemTableRow(AnnualInspectionItemModel it) {
+      final isDoneChecked = it.isDone || it.status == 'Done';
+      final remarksText =
+          it.remarks.isNotEmpty ? it.remarks : (it.auxValue ?? '');
+
+      return pw.TableRow(
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 2.0),
+            alignment: pw.Alignment.center,
+            child: pw.Text('${it.number}.',
+                style: pw.TextStyle(fontSize: 8.8, font: fontRegular)),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1.8),
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                buildSafeText(
+                  it.nameEn,
+                  fontSize: 8.6,
+                  font: fontBold,
+                ),
+                if (it.desc.isNotEmpty && it.desc != it.nameEn)
+                  buildSafeText(
+                    it.desc,
+                    fontSize: 7.5,
+                    font: fontRegular,
+                  ),
+              ],
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(vertical: 2.0),
+            alignment: pw.Alignment.center,
+            child: buildPdfCheckbox(isDoneChecked, size: 9.0),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2.0),
+            alignment: pw.Alignment.centerLeft,
+            child: buildSafeText(
+              remarksText,
+              fontSize: 8.2,
+              font: fontRegular,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final itemsMap = {for (var it in inspection.items) it.number: it};
+    final defaultList = AnnualDetailInspectionModel.defaultItems();
+
+    AnnualInspectionItemModel getItem(int num) {
+      return itemsMap[num] ??
+          defaultList.firstWhere((e) => e.number == num,
+              orElse: () => AnnualInspectionItemModel(
+                  number: num, title: '', nameEn: '', desc: ''));
+    }
+
+    pw.Table buildChecklistTable(
+      List<AnnualInspectionItemModel> pageItems, {
+      bool includeSubheader = false,
+    }) {
+      return pw.Table(
+        border: pw.TableBorder.all(color: black, width: 0.7),
+        columnWidths: const {
+          0: pw.FixedColumnWidth(30),
+          1: pw.FlexColumnWidth(1.0),
+          2: pw.FixedColumnWidth(42),
+          3: pw.FixedColumnWidth(81),
+        },
+        children: [
+          buildTableHeaderTableRow(),
+          if (includeSubheader)
+            pw.TableRow(
+              children: [
+                pw.Container(),
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 2),
+                  child: pw.Text(
+                    'Detailed Inspection (Annual)',
+                    style: pw.TextStyle(
+                        fontSize: 8.8, font: fontBold, color: blueHeading),
+                  ),
+                ),
+                pw.Container(),
+                pw.Container(),
+              ],
+            ),
+          ...pageItems.map((it) => buildItemTableRow(it)),
+        ],
+      );
+    }
+
+    // =========================================================================
+    // PAGE 1: Header + Section A (General Info) + Table Header + Items 1 to 15
+    // =========================================================================
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              buildTopPublicBanner(),
+              pw.SizedBox(height: 5),
+              buildOfficialHeader(1),
+              pw.SizedBox(height: 5),
+              buildGeneralInfoBlock(),
+              pw.SizedBox(height: 5),
+              buildChecklistTable(
+                List.generate(15, (index) => getItem(index + 1)),
+                includeSubheader: true,
+              ),
+              pw.Spacer(),
+              buildBottomFooterBanner(),
+            ],
+          );
+        },
+      ),
+    );
+
+    // =========================================================================
+    // PAGE 2: Header + Table Header + Items 16 to 32
+    // =========================================================================
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              buildTopPublicBanner(),
+              pw.SizedBox(height: 5),
+              buildOfficialHeader(2),
+              pw.SizedBox(height: 6),
+              buildChecklistTable(
+                List.generate(17, (index) => getItem(index + 16)),
+                includeSubheader: false,
+              ),
+              pw.Spacer(),
+              buildBottomFooterBanner(),
+            ],
+          );
+        },
+      ),
+    );
+
+    // =========================================================================
+    // PAGE 3: Header + Table Header + Items 33 to 35 + Comments + Signatures
+    // =========================================================================
+    pw.Widget buildSignUnderlineField({
+      required String label,
+      required String text,
+      Uint8List? signatureBytes,
+    }) {
+      final isSignature = signatureBytes != null;
+      return pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
+        children: [
+          pw.Text(
+            label,
+            style: pw.TextStyle(fontSize: 9.0, font: fontRegular),
+          ),
+          pw.SizedBox(width: 2),
+          pw.Expanded(
+            child: pw.Container(
+              height: isSignature ? 32 : 20,
+              decoration: const pw.BoxDecoration(
+                border: pw.Border(
+                  bottom: pw.BorderSide(color: black, width: 0.7),
+                ),
+              ),
+              alignment: isSignature ? pw.Alignment.bottomCenter : pw.Alignment.bottomLeft,
+              padding: const pw.EdgeInsets.only(bottom: 1.0),
+              child: isSignature
+                  ? pw.Container(
+                      height: 30,
+                      child: pw.Center(
+                        child: pw.Image(
+                          pw.MemoryImage(signatureBytes),
+                          height: 30,
+                          fit: pw.BoxFit.contain,
+                        ),
+                      ),
+                    )
+                  : buildSafeText(
+                      text,
+                      fontSize: 9.0,
+                      font: fontRegular,
+                    ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              buildTopPublicBanner(),
+              pw.SizedBox(height: 5),
+              buildOfficialHeader(3),
+              pw.SizedBox(height: 6),
+              buildChecklistTable(
+                List.generate(3, (index) => getItem(index + 33)),
+                includeSubheader: false,
+              ),
+              pw.SizedBox(height: 12),
+
+              // Comments (if Any):
+              pw.Container(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text(
+                  'Comments (if Any):',
+                  style: pw.TextStyle(fontSize: 11.5, font: fontBold),
+                ),
+              ),
+              pw.SizedBox(height: 4),
+
+              // Ruled Lines matching official form (Image 3)
+              pw.Container(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    // Line 1 (with text if present)
+                    pw.Container(
+                      height: 20,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                            bottom: pw.BorderSide(color: black, width: 0.7)),
+                      ),
+                      alignment: pw.Alignment.bottomLeft,
+                      padding: const pw.EdgeInsets.only(bottom: 2, left: 2),
+                      child: buildSafeText(
+                        inspection.comments.isNotEmpty
+                            ? inspection.comments
+                            : '',
+                        fontSize: 9.5,
+                        font: fontRegular,
+                      ),
+                    ),
+                    // Line 2
+                    pw.Container(
+                      height: 20,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                            bottom: pw.BorderSide(color: black, width: 0.7)),
+                      ),
+                    ),
+                    // Line 3
+                    pw.Container(
+                      height: 20,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                            bottom: pw.BorderSide(color: black, width: 0.7)),
+                      ),
+                    ),
+                    // Line 4
+                    pw.Container(
+                      height: 20,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                            bottom: pw.BorderSide(color: black, width: 0.7)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              pw.SizedBox(height: 16),
+
+              // Signatures & Approvals Section matching Image 3 exactly
+              pw.Column(
+                children: [
+                  // Row 1: Inspected By | Badge No. | Signature | Date
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Expanded(
+                        flex: 28,
+                        child: buildSignUnderlineField(
+                          label: 'Inspected By',
+                          text: inspection.inspectedByName,
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Expanded(
+                        flex: 17,
+                        child: buildSignUnderlineField(
+                          label: 'Badge No.',
+                          text: inspection.inspectedByBadge,
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Expanded(
+                        flex: 26,
+                        child: buildSignUnderlineField(
+                          label: 'Signature',
+                          text: '',
+                          signatureBytes: inspectorSignatureBytes,
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Expanded(
+                        flex: 17,
+                        child: buildSignUnderlineField(
+                          label: 'Date',
+                          text: inspection.inspectedDate.isNotEmpty
+                              ? (inspection.inspectedDate.contains(' ')
+                                  ? inspection.inspectedDate.split(' ')[0]
+                                  : inspection.inspectedDate.split('T')[0])
+                              : '',
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  pw.SizedBox(height: 12),
+
+                  // Row 2: Checked By | Badge No. | Signature | Date
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Expanded(
+                        flex: 28,
+                        child: buildSignUnderlineField(
+                          label: 'Checked By',
+                          text: inspection.checkedByName,
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Expanded(
+                        flex: 17,
+                        child: buildSignUnderlineField(
+                          label: 'Badge No.',
+                          text: inspection.checkedByBadge,
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Expanded(
+                        flex: 26,
+                        child: buildSignUnderlineField(
+                          label: 'Signature',
+                          text: '',
+                          signatureBytes: checkerSignatureBytes,
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Expanded(
+                        flex: 17,
+                        child: buildSignUnderlineField(
+                          label: 'Date',
+                          text: inspection.checkedDate.isNotEmpty
+                              ? (inspection.checkedDate.contains(' ')
+                                  ? inspection.checkedDate.split(' ')[0]
+                                  : inspection.checkedDate.split('T')[0])
+                              : '',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              pw.Spacer(),
+              buildBottomFooterBanner(),
+            ],
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
+  }
 }
-
-

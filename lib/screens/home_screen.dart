@@ -7,6 +7,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'grid_maintenance_screen.dart';
 import 'oil_sampling_screen.dart';
 import 'transformer_checklist_screen.dart';
+import 'sample_acknowledgement_screen.dart';
+import 'annual_detail_inspection_screen.dart';
+import 'drafts_screen.dart';
+import '../models/draft_model.dart';
+import '../services/draft_storage_service.dart';
+import '../models/annual_detail_inspection_model.dart';
 import '../services/app_update_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,21 +27,125 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   String _appVersion = '';
+  List<DraftModel> _activeDrafts = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAppVersion();
+    _loadActiveDrafts();
+    DraftStorageService.draftsChangeNotifier.addListener(_loadActiveDrafts);
     // فحص التحديثات المتاحة تلقائياً عند فتح التطبيق
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppUpdateService.checkForUpdates(context);
     });
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    DraftStorageService.draftsChangeNotifier.removeListener(_loadActiveDrafts);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadActiveDrafts();
+    }
+  }
+
+  Future<void> _loadActiveDrafts() async {
+    try {
+      final drafts = await DraftStorageService.getActiveDrafts();
+      if (mounted) {
+        setState(() {
+          _activeDrafts = drafts;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading active drafts: $e');
+    }
+  }
+
+  Future<void> _navigateToDraftsScreen(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const DraftsScreen(),
+      ),
+    );
+    if (mounted) _loadActiveDrafts();
+  }
+
+  Future<void> _openDraft(DraftModel draft) async {
+    if (draft.formId == 'annual_detail_inspection') {
+      final annualModel = AnnualDetailInspectionModel.fromMap(draft.data);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AnnualDetailInspectionScreen(
+            existingInspection: annualModel,
+            initialWorkOrder: annualModel.workOrderNo,
+          ),
+        ),
+      );
+    } else if (draft.formId == 'grid_maintenance') {
+      final sub = NationalGridData.substations.firstWhere(
+        (s) => s.name == draft.substation,
+        orElse: () => NationalGridData.substations.first,
+      );
+      final form = SampleFormData.defaultForms.firstWhere(
+        (f) => f.id == 'grid_maintenance',
+      );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GridMaintenanceScreen(
+            form: form,
+            selectedSubstation: sub,
+            initialWorkOrder: draft.workOrderNo,
+            initialInspectionDate: draft.data['inspectionDate'] as String?,
+            draftData: draft.data,
+          ),
+        ),
+      );
+    } else if (draft.formId == 'transformer_checklist') {
+      final sub = NationalGridData.substations.firstWhere(
+        (s) => s.name == draft.substation,
+        orElse: () => NationalGridData.substations.first,
+      );
+      final form = SampleFormData.defaultForms.firstWhere(
+        (f) => f.id == 'transformer_checklist',
+      );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TransformerChecklistScreen(
+            form: form,
+            selectedSubstation: sub,
+            initialWorkOrder: draft.workOrderNo,
+            initialDivision: draft.data['division'] as String?,
+            initialDepartment: draft.data['department'] as String?,
+            initialContactPerson: draft.data['contactPerson'] as String?,
+            initialInspectionDate: draft.data['inspectionDate'] as String?,
+            draftData: draft.data,
+          ),
+        ),
+      );
+    } else {
+      await _navigateToDraftsScreen(context);
+    }
+    if (mounted) _loadActiveDrafts();
+  }
+
 
   Future<void> _loadAppVersion() async {
     try {
@@ -48,11 +158,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
 
   void _openForm(BuildContext context, FormModel form) {
     if (form.id == 'grid_maintenance') {
@@ -69,6 +174,820 @@ class _HomeScreenState extends State<HomeScreen> {
       _showStartOilSamplingDialog(context, form);
       return;
     }
+
+    if (form.id == 'sample_acknowledgement') {
+      _showStartSampleAcknowledgementDialog(context, form);
+      return;
+    }
+
+    if (form.id == 'annual_detail_inspection') {
+      _showStartAnnualInspectionDialog(context, form);
+      return;
+    }
+  }
+
+  void _showStartSampleAcknowledgementDialog(
+      BuildContext context, FormModel form) {
+    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
+      (s) => s.name == 'JIC',
+      orElse: () => NationalGridData.substations.first,
+    );
+    final allUnits = <TransformerInfo>[
+      ...selectedSubstation.transformers,
+      ...selectedSubstation.auxTransformers,
+    ];
+    TransformerInfo? selectedEquipment =
+        allUnits.isNotEmpty ? allUnits.first : null;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final units = <TransformerInfo>[
+              ...selectedSubstation.transformers,
+              ...selectedSubstation.auxTransformers,
+            ];
+            if (selectedEquipment == null ||
+                !units.contains(selectedEquipment)) {
+              selectedEquipment = units.isNotEmpty ? units.first : null;
+            }
+
+            return Dialog(
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 480),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                    // Header card matching Image 1
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFF1D4ED8)
+                              .withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF1D4ED8),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.bolt_rounded,
+                              color: Color(0xFFFACC15),
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'المحطة والمعدة (National Grid Dataset)',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF0F2C59),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'يتم استرجاع بيانات الجهد والسعة والشركة المصنعة تلقائياً',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: isDark
+                                        ? Colors.grey.shade400
+                                        : const Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Substation Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'محطة التحويل (Substation):',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isDark
+                                ? Colors.grey.shade200
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF0F172A)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<SubstationModel>(
+                              value: selectedSubstation,
+                              isExpanded: true,
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Color(0xFF1D4ED8),
+                              ),
+                              items: NationalGridData.substations.map((sub) {
+                                return DropdownMenuItem<SubstationModel>(
+                                  value: sub,
+                                  child: Text(
+                                    '${sub.name} (${sub.region})',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (newSub) {
+                                if (newSub != null) {
+                                  setDialogState(() {
+                                    selectedSubstation = newSub;
+                                    final newUnits = <TransformerInfo>[
+                                      ...newSub.transformers,
+                                      ...newSub.auxTransformers,
+                                    ];
+                                    selectedEquipment = newUnits.isNotEmpty
+                                        ? newUnits.first
+                                        : null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Equipment Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'المعدة / المحول (Equipment / Transformer):',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isDark
+                                ? Colors.grey.shade200
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF0F172A)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<TransformerInfo>(
+                              value: units.contains(selectedEquipment)
+                                  ? selectedEquipment
+                                  : (units.isNotEmpty ? units.first : null),
+                              isExpanded: true,
+                              hint: const Text('اختر المعدة',
+                                  style: TextStyle(fontSize: 12)),
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Color(0xFF1D4ED8),
+                              ),
+                              items: units.map((tx) {
+                                return DropdownMenuItem<TransformerInfo>(
+                                  value: tx,
+                                  child: Text(
+                                    '${tx.number} (${tx.voltage.isNotEmpty ? "${tx.voltage} Kv" : ""})',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (newTx) {
+                                setDialogState(() {
+                                  selectedEquipment = newTx;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+
+                    // Action Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              side: BorderSide(
+                                color: isDark
+                                    ? const Color(0xFF475569)
+                                    : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(dialogCtx),
+                            child: const Text('إلغاء',
+                                style:
+                                    TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D4ED8),
+                              foregroundColor: Colors.white,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
+                            icon: const Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 18),
+                            label: const Text(
+                              'بدء تعبئة النموذج',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            onPressed: () async {
+                              Navigator.pop(dialogCtx);
+                              await Navigator.push(
+                                context,
+                                PageRouteBuilder(
+                                  pageBuilder: (context, animation,
+                                          secondaryAnimation) =>
+                                      SampleAcknowledgementScreen(
+                                    form: form,
+                                    initialSubstation: selectedSubstation,
+                                    initialEquipment: selectedEquipment,
+                                  ),
+                                  transitionsBuilder: (context, animation,
+                                      secondaryAnimation, child) {
+                                    const begin = Offset(0.0, 0.05);
+                                    const end = Offset.zero;
+                                    const curve = Curves.easeOutCubic;
+                                    var tween = Tween(begin: begin, end: end)
+                                        .chain(CurveTween(curve: curve));
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: animation.drive(tween),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                              if (mounted) _loadActiveDrafts();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          },
+        );
+      },
+    );
+  }
+
+  void _showStartAnnualInspectionDialog(
+      BuildContext context, FormModel form) {
+    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
+      (s) => s.name == 'JIC',
+      orElse: () => NationalGridData.substations.first,
+    );
+    final allUnits = <TransformerInfo>[
+      ...selectedSubstation.transformers,
+      ...selectedSubstation.auxTransformers,
+    ];
+    TransformerInfo? selectedEquipment =
+        allUnits.isNotEmpty ? allUnits.first : null;
+    final workOrderController = TextEditingController(text: '');
+    String? workOrderError;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final units = <TransformerInfo>[
+              ...selectedSubstation.transformers,
+              ...selectedSubstation.auxTransformers,
+            ];
+            if (selectedEquipment == null ||
+                !units.contains(selectedEquipment)) {
+              selectedEquipment = units.isNotEmpty ? units.first : null;
+            }
+
+            return Dialog(
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 480),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFF0F2C59).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F2C59),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.assignment_turned_in_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Annual Detail Inspection',
+                                  style: TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'CL-GM-1600-004-002 • نقل الكهرباء',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark
+                                        ? Colors.grey.shade400
+                                        : const Color(0xFF0F2C59),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Substation Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'محطة التحويل (Substation):',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isDark
+                                ? Colors.grey.shade200
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF0F172A)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<SubstationModel>(
+                              value: selectedSubstation,
+                              isExpanded: true,
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Color(0xFF0F2C59),
+                              ),
+                              items: NationalGridData.substations.map((sub) {
+                                return DropdownMenuItem<SubstationModel>(
+                                  value: sub,
+                                  child: Text(
+                                    '${sub.name} (${sub.region})',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (newSub) {
+                                if (newSub != null) {
+                                  setDialogState(() {
+                                    selectedSubstation = newSub;
+                                    final currentUnits = <TransformerInfo>[
+                                      ...newSub.transformers,
+                                      ...newSub.auxTransformers,
+                                    ];
+                                    selectedEquipment = currentUnits.isNotEmpty
+                                        ? currentUnits.first
+                                        : null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Transformer Designation Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'مسمى المحول / المعدة (Transformer Designation):',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isDark
+                                ? Colors.grey.shade200
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF0F172A)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<TransformerInfo>(
+                              value: units.contains(selectedEquipment)
+                                  ? selectedEquipment
+                                  : (units.isNotEmpty ? units.first : null),
+                              isExpanded: true,
+                              hint: const Text('اختر المعدة',
+                                  style: TextStyle(fontSize: 12)),
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Color(0xFF0F2C59),
+                              ),
+                              items: units.map((tx) {
+                                return DropdownMenuItem<TransformerInfo>(
+                                  value: tx,
+                                  child: Text(
+                                    '${tx.number} • ${tx.voltage}${tx.mva != null && tx.mva!.isNotEmpty ? " • ${tx.mva}" : ""}',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (newTx) {
+                                setDialogState(() {
+                                  selectedEquipment = newTx;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    Builder(builder: (ctx) {
+                      final annualDrafts = _activeDrafts
+                          .where((d) => d.formId == 'annual_detail_inspection')
+                          .toList();
+                      if (annualDrafts.isEmpty) return const SizedBox.shrink();
+                      final draft = annualDrafts.first;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF312E81).withValues(alpha: 0.3)
+                              : const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFF59E0B),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.bookmark_added_rounded,
+                                    color: Color(0xFFD97706), size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'توجد مسودة محفوظة لهذا النموذج',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFD97706),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'أمر عمل: ${draft.workOrderNo} • محطة: ${draft.substation}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.grey.shade300
+                                    : const Color(0xFF78350F),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFD97706),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                                label: const Text(
+                                  'استكمال المسودة المحفوظة',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(dialogCtx);
+                                  _openDraft(draft);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+
+                    // Work Order Field
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'رقم أمر العمل (Work Order No.):',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isDark
+                                ? Colors.grey.shade200
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: workOrderController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (val) {
+                            if (workOrderError != null) {
+                              setDialogState(() {
+                                workOrderError = null;
+                              });
+                            }
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'أدخل رقم أمر العمل...',
+                            errorText: workOrderError,
+                            prefixIcon: const Icon(Icons.confirmation_number_outlined),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF0F2C59),
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Actions
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(dialogCtx),
+                            child: const Text('إلغاء',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0F2C59),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
+                            icon: const Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 18),
+                            label: const Text(
+                              'بدء تعبئة النموذج',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            onPressed: () async {
+                              final wo = workOrderController.text.trim();
+                              if (wo.isEmpty) {
+                                setDialogState(() {
+                                  workOrderError =
+                                      'يلزم إدخال رقم أمر العمل (Work Order No.) قبل بدء تعبئة النموذج';
+                                });
+                                return;
+                              }
+                              Navigator.pop(dialogCtx);
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      AnnualDetailInspectionScreen(
+                                    form: form,
+                                    initialSubstation: selectedSubstation,
+                                    initialEquipment: selectedEquipment ??
+                                        (units.isNotEmpty ? units.first : null),
+                                    initialWorkOrder: wo,
+                                  ),
+                                ),
+                              );
+                              if (mounted) _loadActiveDrafts();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          },
+        );
+      },
+    );
   }
 
   void _showStartChecklistDialog(BuildContext context, FormModel form) {
@@ -90,11 +1009,6 @@ class _HomeScreenState extends State<HomeScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final isDark = Theme.of(context).brightness == Brightness.dark;
-            final availableDepts =
-                NationalGridData.getDepartmentsForDivision(selectedDivision);
-            if (!availableDepts.contains(selectedDepartment)) {
-              selectedDepartment = availableDepts.first;
-            }
 
             return Dialog(
               insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
@@ -162,139 +1076,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // 1. Division & 2. Department (Row at top)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 1. Division (القطاع) Dropdown from Dataset
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(Icons.domain_rounded, size: 14, color: Color(0xFF0F766E)),
-                                      SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '1. القطاع (Division)',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                                      ),
-                                    ),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: NationalGridData.allDivisions.contains(selectedDivision)
-                                            ? selectedDivision
-                                            : NationalGridData.allDivisions.first,
-                                        isExpanded: true,
-                                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFF0F766E)),
-                                        items: NationalGridData.allDivisions.map((div) {
-                                          final shortName = div.split(' / ').first;
-                                          return DropdownMenuItem<String>(
-                                            value: div,
-                                            child: Text(
-                                              shortName,
-                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          );
-                                        }).toList(),
-                                        onChanged: (newDiv) {
-                                          if (newDiv != null) {
-                                            setDialogState(() {
-                                              selectedDivision = newDiv;
-                                              final depts = NationalGridData.getDepartmentsForDivision(newDiv);
-                                              selectedDepartment = depts.first;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // 2. Department (الإدارة / القسم) Dropdown from Dataset
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(Icons.business_center_rounded, size: 14, color: Color(0xFF0F766E)),
-                                      SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '2. الإدارة (Department)',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                                      ),
-                                    ),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: availableDepts.contains(selectedDepartment)
-                                            ? selectedDepartment
-                                            : availableDepts.first,
-                                        isExpanded: true,
-                                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFF0F766E)),
-                                        items: availableDepts.map((dept) {
-                                          final shortDept = dept.replaceAll('Substation Maintenance Dept', 'Maint Dept');
-                                          return DropdownMenuItem<String>(
-                                            value: dept,
-                                            child: Text(
-                                              shortDept,
-                                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          );
-                                        }).toList(),
-                                        onChanged: (newDept) {
-                                          if (newDept != null) {
-                                            setDialogState(() {
-                                              selectedDepartment = newDept;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // 3. Substation Selection & Transformers (Moved UNDER Division & Department)
+                        // Substation Selection & Transformers
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -313,7 +1095,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
-                                      '3. محطة التحويل (Substation Name/No)',
+                                      'محطة التحويل (Substation Name/No)',
                                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -391,9 +1173,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // 4. Contact Person
+                        // Contact Person
                         const Text(
-                          '4. الشخص المسؤول للتواصل (Contact Person)',
+                          'الشخص المسؤول للتواصل (Contact Person)',
                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -413,117 +1195,97 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // 5. Work Order & 6. Date (Row)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        // Work Order
+                        const Row(
                           children: [
-                            // Work Order
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          '5. أمر العمل (W.O)',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  TextFormField(
-                                    controller: workOrderController,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                                    decoration: InputDecoration(
-                                      hintText: 'مثال: 8842910',
-                                      prefixIcon: const Icon(Icons.receipt_long_rounded, size: 16),
-                                      prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                      filled: true,
-                                    ),
-                                    validator: (val) {
-                                      if (val == null || val.trim().isEmpty) {
-                                        return 'مطلوب';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ],
+                              child: Text(
+                                'أمر العمل (W.O)',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        TextFormField(
+                          controller: workOrderController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                          decoration: InputDecoration(
+                            hintText: 'مثال: 8842910',
+                            prefixIcon: const Icon(Icons.receipt_long_rounded, size: 16),
+                            prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                            filled: true,
+                          ),
+                          validator: (val) {
+                            if (val == null || val.trim().isEmpty) {
+                              return 'مطلوب';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
 
-                            // Date Picker
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '6. تاريخ الفحص (Date)',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                        // Date Picker
+                        const Text(
+                          'تاريخ الفحص (Date)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 5),
+                        InkWell(
+                          onTap: () async {
+                            final now = DateTime.now();
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: now,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2035),
+                              helpText: 'تاريخ الفحص',
+                              cancelText: 'إلغاء',
+                              confirmText: 'تأكيد',
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                inspectionDate = DateFormat('yyyy/MM/dd').format(picked);
+                              });
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.calendar_today_rounded, size: 16, color: Color(0xFF0F766E)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    inspectionDate,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 5),
-                                  InkWell(
-                                    onTap: () async {
-                                      final now = DateTime.now();
-                                      final picked = await showDatePicker(
-                                        context: context,
-                                        initialDate: now,
-                                        firstDate: DateTime(2020),
-                                        lastDate: DateTime(2035),
-                                        helpText: 'تاريخ الفحص',
-                                        cancelText: 'إلغاء',
-                                        confirmText: 'تأكيد',
-                                      );
-                                      if (picked != null) {
-                                        setDialogState(() {
-                                          inspectionDate = DateFormat('yyyy/MM/dd').format(picked);
-                                        });
-                                      }
-                                    },
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.calendar_today_rounded, size: 15, color: Color(0xFF0F766E)),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              inspectionDate,
-                                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const Icon(Icons.arrow_drop_down_rounded, size: 16, color: Color(0xFF0F766E)),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const Icon(Icons.arrow_drop_down_rounded, size: 18, color: Color(0xFF0F766E)),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                         const SizedBox(height: 18),
 
@@ -544,10 +1306,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               'بدء الفحص',
                               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                             ),
-                            onPressed: () {
+                            onPressed: () async {
                               if (formKey.currentState!.validate()) {
                                 Navigator.pop(dialogCtx);
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   PageRouteBuilder(
                                     pageBuilder: (context, animation, secondaryAnimation) =>
@@ -577,6 +1339,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     },
                                   ),
                                 );
+                                if (mounted) _loadActiveDrafts();
                               }
                             },
                           ),
@@ -598,8 +1361,6 @@ class _HomeScreenState extends State<HomeScreen> {
       (s) => s.name == 'JIC',
       orElse: () => NationalGridData.substations.first,
     );
-    String selectedDivision = selectedSubstation.division;
-    String selectedDepartment = selectedSubstation.department;
     final Set<String> selectedEquipmentNumbers = <String>{};
     bool showEquipmentError = false;
     final sampleTempController = TextEditingController(text: '');
@@ -613,11 +1374,6 @@ class _HomeScreenState extends State<HomeScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final isDark = Theme.of(context).brightness == Brightness.dark;
-            final availableDepts =
-                NationalGridData.getDepartmentsForDivision(selectedDivision);
-            if (!availableDepts.contains(selectedDepartment)) {
-              selectedDepartment = availableDepts.first;
-            }
 
             final allUnits = [
               ...selectedSubstation.transformers,
@@ -690,138 +1446,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // 1. Division & 2. Department
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 1. Division (القطاع) Dropdown from Dataset
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(Icons.domain_rounded, size: 14, color: Color(0xFFD97706)),
-                                      SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '1. القطاع (Division)',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                                      ),
-                                    ),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: NationalGridData.allDivisions.contains(selectedDivision)
-                                            ? selectedDivision
-                                            : NationalGridData.allDivisions.first,
-                                        isExpanded: true,
-                                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFFD97706)),
-                                        items: NationalGridData.allDivisions.map((div) {
-                                          final shortName = div.split(' / ').first;
-                                          return DropdownMenuItem<String>(
-                                            value: div,
-                                            child: Text(
-                                              shortName,
-                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          );
-                                        }).toList(),
-                                        onChanged: (newDiv) {
-                                          if (newDiv != null) {
-                                            setDialogState(() {
-                                              selectedDivision = newDiv;
-                                              final depts = NationalGridData.getDepartmentsForDivision(newDiv);
-                                              selectedDepartment = depts.first;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // 2. Department (الإدارة / القسم) Dropdown from Dataset
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(Icons.business_center_rounded, size: 14, color: Color(0xFFD97706)),
-                                      SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '2. الإدارة (Department)',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                                      ),
-                                    ),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: availableDepts.contains(selectedDepartment)
-                                            ? selectedDepartment
-                                            : (availableDepts.isNotEmpty ? availableDepts.first : selectedDepartment),
-                                        isExpanded: true,
-                                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFFD97706)),
-                                        items: availableDepts.map((dept) {
-                                          return DropdownMenuItem<String>(
-                                            value: dept,
-                                            child: Text(
-                                              dept,
-                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          );
-                                        }).toList(),
-                                        onChanged: (newDept) {
-                                          if (newDept != null) {
-                                            setDialogState(() {
-                                              selectedDepartment = newDept;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // 3. Substation Selection & Interactive Equipment Selection
+                        // Substation Selection & Interactive Equipment Selection
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -840,7 +1465,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
-                                      '3. محطة التحويل (Substation Name/No)',
+                                      'محطة التحويل (Substation Name/No)',
                                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -878,8 +1503,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                       if (newSub != null) {
                                         setDialogState(() {
                                           selectedSubstation = newSub;
-                                          selectedDivision = newSub.division;
-                                          selectedDepartment = newSub.department;
                                           selectedEquipmentNumbers.clear();
                                         });
                                       }
@@ -887,38 +1510,50 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
 
                               // Interactive Equipment Selection Section
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 6,
                                 children: [
                                   Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const Icon(Icons.checklist_rounded,
-                                          size: 14, color: Color(0xFFD97706)),
-                                      const SizedBox(width: 4),
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFD97706).withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Icon(
+                                          Icons.checklist_rounded,
+                                          size: 17,
+                                          color: Color(0xFFD97706),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
                                       const Text(
                                         'اختر المعدات المطلوب فحصها:',
                                         style: TextStyle(
-                                          fontSize: 11.5,
+                                          fontSize: 12.5,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
-                                      const Text(' *',
-                                          style: TextStyle(
-                                              color: Colors.red,
-                                              fontWeight: FontWeight.bold)),
+                                      const Text(
+                                        ' *',
+                                        style: TextStyle(
+                                          color: Colors.red,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                  TextButton(
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    onPressed: () {
+                                  InkWell(
+                                    onTap: () {
                                       setDialogState(() {
                                         showEquipmentError = false;
                                         if (selectedEquipmentNumbers.length ==
@@ -931,26 +1566,38 @@ class _HomeScreenState extends State<HomeScreen> {
                                         }
                                       });
                                     },
-                                    child: Text(
-                                      selectedEquipmentNumbers.length ==
-                                              allUnits.length
-                                          ? 'إلغاء تحديد الكل'
-                                          : 'تحديد كل المعدات (${allUnits.length})',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFFD97706),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFD97706).withValues(alpha: isDark ? 0.2 : 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: const Color(0xFFD97706).withValues(alpha: 0.3),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        selectedEquipmentNumbers.length ==
+                                                allUnits.length
+                                            ? 'إلغاء تحديد الكل'
+                                            : 'تحديد كل المعدات (${allUnits.length})',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFFD97706),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 10),
 
                               // Equipment Selection Chips (Multi-Select)
                               Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
+                                spacing: 8,
+                                runSpacing: 8,
                                 children: allUnits.map((tx) {
                                   final isSelected =
                                       selectedEquipmentNumbers.contains(tx.number);
@@ -966,26 +1613,35 @@ class _HomeScreenState extends State<HomeScreen> {
                                         }
                                       });
                                     },
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(10),
                                     child: AnimatedContainer(
                                       duration: const Duration(milliseconds: 180),
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 5),
+                                          horizontal: 12, vertical: 9),
                                       decoration: BoxDecoration(
                                         color: isSelected
                                             ? const Color(0xFFD97706)
                                             : (isDark
                                                 ? const Color(0xFF1E293B)
                                                 : Colors.white),
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
                                           color: isSelected
                                               ? const Color(0xFFD97706)
                                               : (isDark
                                                   ? const Color(0xFF475569)
                                                   : const Color(0xFFCBD5E1)),
-                                          width: isSelected ? 1.4 : 1.0,
+                                          width: isSelected ? 1.6 : 1.1,
                                         ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: isSelected
+                                                ? const Color(0xFFD97706).withValues(alpha: 0.3)
+                                                : Colors.black.withValues(alpha: 0.03),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1.5),
+                                          ),
+                                        ],
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -994,18 +1650,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                             isSelected
                                                 ? Icons.check_circle_rounded
                                                 : Icons.radio_button_unchecked_rounded,
-                                            size: 14,
+                                            size: 18,
                                             color: isSelected
                                                 ? Colors.white
                                                 : (isDark
                                                     ? Colors.grey.shade400
                                                     : const Color(0xFF64748B)),
                                           ),
-                                          const SizedBox(width: 4),
+                                          const SizedBox(width: 6),
                                           Text(
-                                            '${tx.number} ${tx.voltage.isNotEmpty ? "(${tx.voltage})" : ""}',
+                                            tx.number,
                                             style: TextStyle(
-                                              fontSize: 11,
+                                              fontSize: 13,
                                               fontWeight: FontWeight.bold,
                                               color: isSelected
                                                   ? Colors.white
@@ -1014,6 +1670,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                                       : const Color(0xFF1E293B)),
                                             ),
                                           ),
+                                          if (tx.voltage.isNotEmpty) ...[
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '(${tx.voltage})',
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: isSelected
+                                                    ? Colors.white.withValues(alpha: 0.9)
+                                                    : (isDark
+                                                        ? Colors.grey.shade400
+                                                        : Colors.grey.shade600),
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),
@@ -1025,106 +1696,86 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // 4. Sample Temp & 5. Date Picker (Row)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Sample Temp
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '4. حرارة العينة (Temp °C)',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 5),
-                                  TextFormField(
-                                    controller: sampleTempController,
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-                                    ],
-                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                                    decoration: InputDecoration(
-                                      hintText: 'مثال: 45',
-                                      suffixText: '°C',
-                                      suffixStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                      prefixIcon: const Icon(Icons.thermostat_rounded, size: 17, color: Color(0xFFD97706)),
-                                      prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                      filled: true,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Date Picker
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '5. تاريخ السحب (Date)',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 5),
-                                  InkWell(
-                                    onTap: () async {
-                                      final now = DateTime.now();
-                                      final picked = await showDatePicker(
-                                        context: context,
-                                        initialDate: now,
-                                        firstDate: DateTime(2020),
-                                        lastDate: DateTime(2035),
-                                        helpText: 'تاريخ سحب العينات',
-                                        cancelText: 'إلغاء',
-                                        confirmText: 'تأكيد',
-                                      );
-                                      if (picked != null) {
-                                        setDialogState(() {
-                                          inspectionDate = DateFormat('yyyy/MM/dd').format(picked);
-                                        });
-                                      }
-                                    },
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.calendar_today_rounded, size: 15, color: Color(0xFFD97706)),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              inspectionDate,
-                                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const Icon(Icons.arrow_drop_down_rounded, size: 16, color: Color(0xFFD97706)),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                        // Sample Temp
+                        const Text(
+                          'حرارة العينة (Temp °C)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 5),
+                        TextFormField(
+                          controller: sampleTempController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
                           ],
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                          decoration: InputDecoration(
+                            hintText: 'مثال: 45',
+                            suffixText: '°C',
+                            suffixStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            prefixIcon: const Icon(Icons.thermostat_rounded, size: 17, color: Color(0xFFD97706)),
+                            prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                            filled: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Date Picker
+                        const Text(
+                          'تاريخ السحب (Date)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 5),
+                        InkWell(
+                          onTap: () async {
+                            final now = DateTime.now();
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: now,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2035),
+                              helpText: 'تاريخ سحب العينات',
+                              cancelText: 'إلغاء',
+                              confirmText: 'تأكيد',
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                inspectionDate = DateFormat('yyyy/MM/dd').format(picked);
+                              });
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.calendar_today_rounded, size: 16, color: Color(0xFFD97706)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    inspectionDate,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const Icon(Icons.arrow_drop_down_rounded, size: 18, color: Color(0xFFD97706)),
+                              ],
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 18),
 
@@ -1185,7 +1836,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               'بدء سحب العينات',
                               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                             ),
-                            onPressed: () {
+                            onPressed: () async {
                               if (selectedEquipmentNumbers.isEmpty) {
                                 setDialogState(() {
                                   showEquipmentError = true;
@@ -1199,7 +1850,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     .toList();
 
                                 Navigator.pop(dialogCtx);
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   PageRouteBuilder(
                                     pageBuilder: (context, animation, secondaryAnimation) =>
@@ -1207,8 +1858,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                       form: form,
                                       selectedSubstation: selectedSubstation,
                                       selectedTransformers: selectedList,
-                                      initialDivision: selectedDivision,
-                                      initialDepartment: selectedDepartment,
+                                      initialDivision: selectedSubstation.division,
+                                      initialDepartment: selectedSubstation.department,
                                       initialContactPerson: '',
                                       initialSampleTemp: sampleTempController.text.trim(),
                                       initialWorkOrder: '',
@@ -1231,6 +1882,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     },
                                   ),
                                 );
+                                if (mounted) _loadActiveDrafts();
                               }
                             },
                           ),
@@ -1546,10 +2198,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               'بدء الفحص',
                               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                             ),
-                            onPressed: () {
+                            onPressed: () async {
                               if (formKey.currentState!.validate()) {
                                 Navigator.pop(dialogCtx);
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   PageRouteBuilder(
                                     pageBuilder: (context, animation, secondaryAnimation) =>
@@ -1576,6 +2228,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     },
                                   ),
                                 );
+                                if (mounted) _loadActiveDrafts();
                               }
                             },
                           ),
@@ -1725,6 +2378,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               isCompact,
                               allForms.length,
                             ),
+                            if (_activeDrafts.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _buildDraftsAlertBanner(context, isDark),
+                            ],
                           ],
                         ),
                       ),
@@ -1901,6 +2558,93 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 children: [
+                  // Section: المسودة
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Text(
+                      'المسودات والمتابعة',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+
+                  // Drafts Option Card
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _activeDrafts.isNotEmpty
+                            ? const Color(0xFFD97706).withValues(alpha: 0.5)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        width: _activeDrafts.isNotEmpty ? 1.4 : 1.0,
+                      ),
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706).withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.bookmark_rounded,
+                            color: Color(0xFFD97706),
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'المسودة',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          _activeDrafts.isNotEmpty
+                              ? '${_activeDrafts.length} ملفات غير مكتملة'
+                              : 'لا توجد مسودات حالية',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          ),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_activeDrafts.isNotEmpty) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD97706),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${_activeDrafts.length}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                          ],
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _navigateToDraftsScreen(context);
+                        },
+                      ),
+                    ),
+                  ),
+
                   // Section: Appearance
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1932,44 +2676,47 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                           ),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: (isCurrentlyDark ? Colors.amber : primaryColor)
-                                  .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: (isCurrentlyDark ? Colors.amber : primaryColor)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                isCurrentlyDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                                color: isCurrentlyDark ? Colors.amber.shade400 : primaryColor,
+                                size: 20,
+                              ),
                             ),
-                            child: Icon(
-                              isCurrentlyDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-                              color: isCurrentlyDark ? Colors.amber.shade400 : primaryColor,
-                              size: 20,
+                            title: Text(
+                              isCurrentlyDark ? 'الوضع الداكن مفعّل' : 'الوضع الفاتح مفعّل',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                             ),
-                          ),
-                          title: Text(
-                            isCurrentlyDark ? 'الوضع الداكن مفعّل' : 'الوضع الفاتح مفعّل',
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            isCurrentlyDark ? 'اضغط للتحويل إلى الثيم الفاتح' : 'اضغط للتحويل إلى الثيم الداكن',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                            subtitle: Text(
+                              isCurrentlyDark ? 'اضغط للتحويل إلى الثيم الفاتح' : 'اضغط للتحويل إلى الثيم الداكن',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                              ),
                             ),
-                          ),
-                          trailing: Switch.adaptive(
-                            value: isCurrentlyDark,
-                            activeTrackColor: primaryColor,
-                            onChanged: (val) {
+                            trailing: Switch.adaptive(
+                              value: isCurrentlyDark,
+                              activeTrackColor: primaryColor,
+                              onChanged: (val) {
+                                widget.themeModeNotifier.value =
+                                    val ? ThemeMode.dark : ThemeMode.light;
+                              },
+                            ),
+                            onTap: () {
                               widget.themeModeNotifier.value =
-                                  val ? ThemeMode.dark : ThemeMode.light;
+                                  isCurrentlyDark ? ThemeMode.light : ThemeMode.dark;
                             },
                           ),
-                          onTap: () {
-                            widget.themeModeNotifier.value =
-                                isCurrentlyDark ? ThemeMode.light : ThemeMode.dark;
-                          },
                         ),
                       );
                     },
@@ -2000,39 +2747,42 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                       ),
                     ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(10),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.system_update_alt_rounded,
+                            color: Color(0xFF10B981),
+                            size: 20,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.system_update_alt_rounded,
-                          color: Color(0xFF10B981),
-                          size: 20,
+                        title: const Text(
+                          'التحقق من وجود تحديثات',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
-                      ),
-                      title: const Text(
-                        'التحقق من وجود تحديثات',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        'فحص الإصدارات الجديدة المتاحة',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        subtitle: Text(
+                          'فحص الإصدارات الجديدة المتاحة',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          ),
                         ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                        onTap: () {
+                          Navigator.pop(context);
+                          AppUpdateService.checkForUpdates(
+                            context,
+                            showNoUpdateMessage: true,
+                          );
+                        },
                       ),
-                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-                      onTap: () {
-                        Navigator.pop(context);
-                        AppUpdateService.checkForUpdates(
-                          context,
-                          showNoUpdateMessage: true,
-                        );
-                      },
                     ),
                   ),
                 ],
@@ -2265,6 +3015,140 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ============================================================================
+  // DRAFTS (المسودة) UI COMPONENTS (Auto-purge after 24 Hours)
+  // ============================================================================
+
+
+  Widget _buildDraftsAlertBanner(BuildContext context, bool isDark) {
+    final count = _activeDrafts.length;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _navigateToDraftsScreen(context),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark
+                ? const Color(0xFF78350F).withValues(alpha: 0.28)
+                : const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFD97706),
+              width: 1.4,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFD97706).withValues(alpha: 0.15),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFD97706), Color(0xFFB45309)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFD97706).withValues(alpha: 0.35),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.bookmark_added_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'تنبيه: ملفات في المسودة',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'لديك $count نموذج بانتظار استكمال التعبئة (صالح لمدة 24 ساعة). اضغط هنا للمتابعة.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.grey.shade300 : const Color(0xFFB45309),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD97706),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'فتح',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 2),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 11,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+
   // Form Button Card Widget - Fully Responsive & Optimized for 2-column mobile
   Widget _buildFormButtonCard(
     BuildContext context,
@@ -2302,64 +3186,33 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Top Row: Form Icon + Code Badge
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: iconSize,
-                    height: iconSize,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [form.primaryColor, form.secondaryColor],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+              // Top: Form Icon (Centered)
+              Center(
+                child: Container(
+                  width: iconSize,
+                  height: iconSize,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [form.primaryColor, form.secondaryColor],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: form.primaryColor.withValues(alpha: 0.3),
+                        blurRadius: 5,
+                        offset: const Offset(0, 2),
                       ),
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: form.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 5,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      form.icon,
-                      color: Colors.white,
-                      size: iconInsideSize,
-                    ),
+                    ],
                   ),
-                  Flexible(
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isCompact ? 6 : 9,
-                        vertical: isCompact ? 3 : 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: form.primaryColor
-                            .withValues(alpha: isDark ? 0.22 : 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: form.primaryColor
-                              .withValues(alpha: isDark ? 0.4 : 0.25),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        form.code,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: isCompact ? 10 : 12,
-                          fontWeight: FontWeight.bold,
-                          color: form.primaryColor,
-                        ),
-                      ),
-                    ),
+                  child: Icon(
+                    form.icon,
+                    color: Colors.white,
+                    size: iconInsideSize,
                   ),
-                ],
+                ),
               ),
 
               const SizedBox(height: 8),

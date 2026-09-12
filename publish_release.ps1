@@ -1,6 +1,6 @@
 param (
     [string]$NewVersion = "",
-    [string]$ReleaseNotes = "• إضافة ميزة التحديث الذاتي التلقائي المباشر.`n• تحسين أداء توليد ملفات الـ PDF والاعتمادات الرسمية.`n• تحسينات شاملة على استقرار وسرعة استجابة النماذج.",
+    [string]$ReleaseNotes = "",
     [bool]$ForceUpdate = $false
 )
 
@@ -14,7 +14,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 $pubspecPath = "pubspec.yaml"
 $pubspecContent = [System.IO.File]::ReadAllText((Resolve-Path $pubspecPath))
 
-if ($pubspecContent -match "version:\s*([0-9\.]+)\+([0-9]+)") {
+if ($pubspecContent -match 'version:\s*([0-9\.]+)\+([0-9]+)') {
     $currentVersion = $matches[1]
     $currentBuild = [int]$matches[2]
 } else {
@@ -38,7 +38,7 @@ $targetBuild = $currentBuild + 1
 Write-Host "Target Release Version: v$targetVersion+$targetBuild" -ForegroundColor Green
 
 # 2. Update pubspec.yaml
-$updatedPubspec = $pubspecContent -replace "version:\s*[0-9\.]+\+[0-9]+", "version: $targetVersion+$targetBuild"
+$updatedPubspec = $pubspecContent -replace 'version:\s*[0-9\.]+\+[0-9]+', "version: $targetVersion+$targetBuild"
 [System.IO.File]::WriteAllText((Resolve-Path $pubspecPath), $updatedPubspec)
 Write-Host "Updated pubspec.yaml to $targetVersion+$targetBuild" -ForegroundColor Green
 
@@ -61,9 +61,13 @@ if (-not (Test-Path "releases")) {
 Copy-Item -Path $apkPath -Destination "releases/app-release.apk" -Force
 Write-Host "Copied APK to releases/app-release.apk inside repository." -ForegroundColor Green
 
-# 5. Update version.json with direct raw repository URL
+# 5. Update version.json
 $today = (Get-Date).ToString("yyyy-MM-dd")
 $downloadUrl = "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk"
+
+if ([string]::IsNullOrWhiteSpace($ReleaseNotes)) {
+    $ReleaseNotes = "Release v$targetVersion with latest features and optimizations."
+}
 
 $escapedNotes = $ReleaseNotes.Replace('"', '\"')
 $versionJsonContent = @"
@@ -82,7 +86,7 @@ Write-Host "Updated version.json with direct download URL and metadata." -Foregr
 
 # 6. Git Commit and Push to GitHub (including APK and version.json)
 Write-Host "`nPushing APK and release metadata to GitHub..." -ForegroundColor Cyan
-git add pubspec.yaml version.json releases/app-release.apk
+git add -A
 git commit -m "release: v$targetVersion+$targetBuild - $ReleaseNotes"
 git tag -a "v$targetVersion" -m "Release v$targetVersion" -f
 git push origin main --tags -f

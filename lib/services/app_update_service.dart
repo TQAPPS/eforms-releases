@@ -51,6 +51,9 @@ class AppUpdateService {
   static String get updateInfoUrl => versionCheckUrl;
   static set updateInfoUrl(String val) => versionCheckUrl = val;
 
+  /// تمكين أو تعطيل فحص التحديثات (مفيد في بيئة الاختبارات widget tests)
+  static bool isEnabled = true;
+
   static final Dio _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -62,6 +65,7 @@ class AppUpdateService {
 
   /// فحص وجود تحديث جديد ومقارنته بالإصدار الحالي
   static Future<AppUpdateInfo?> checkUpdate({String? customUrl}) async {
+    if (!isEnabled) return null;
     try {
       final url = customUrl ?? versionCheckUrl;
       final response = await _dio.get(
@@ -108,6 +112,7 @@ class AppUpdateService {
     BuildContext context, {
     bool showNoUpdateMessage = false,
   }) async {
+    if (!isEnabled && !showNoUpdateMessage) return;
     // التأكد من أن النظام يعمل على Android فقط للتحديث المباشر
     if (!Platform.isAndroid) return;
 
@@ -216,9 +221,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
     _cancelToken = CancelToken();
 
     try {
-      final tempDir = await getTemporaryDirectory();
+      Directory? dir;
+      try {
+        dir = await getExternalStorageDirectory();
+      } catch (_) {}
+      dir ??= await getTemporaryDirectory();
+
       final filePath =
-          '${tempDir.path}/update_${widget.updateInfo.latestVersion}_${widget.updateInfo.buildNumber}.apk';
+          '${dir.path}/update_${widget.updateInfo.latestVersion}_${widget.updateInfo.buildNumber}.apk';
 
       // حذف الملف القديم إن وجد مسبقاً
       final file = File(filePath);

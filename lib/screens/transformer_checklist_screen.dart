@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/form_model.dart';
 import '../models/substation_model.dart';
+import '../models/draft_model.dart';
+import '../services/draft_storage_service.dart';
 import '../services/pdf_generator_service.dart';
 import 'pdf_preview_screen.dart';
 import 'transformer_review_approval_screen.dart';
@@ -39,6 +41,7 @@ class TransformerChecklistScreen extends StatefulWidget {
   final String? initialDepartment;
   final String? initialWorkOrder;
   final String? initialInspectionDate;
+  final Map<String, dynamic>? draftData;
 
   const TransformerChecklistScreen({
     super.key,
@@ -49,6 +52,7 @@ class TransformerChecklistScreen extends StatefulWidget {
     this.initialDepartment,
     this.initialWorkOrder,
     this.initialInspectionDate,
+    this.draftData,
   });
 
   static String getDivisionForSubstation(SubstationModel sub) {
@@ -124,6 +128,8 @@ class _TransformerChecklistScreenState
     return _transformers.every((t) => _isTransformerComplete(t.number));
   }
 
+  bool _isSavingDraft = false;
+
   @override
   void initState() {
     super.initState();
@@ -160,8 +166,149 @@ class _TransformerChecklistScreenState
     }
 
     _selectedTransformer = txList.first;
+
+    // Restore draft data if provided
+    if (widget.draftData != null) {
+      final draft = widget.draftData!;
+      if (draft['inspectionDate'] != null &&
+          (draft['inspectionDate'] as String).isNotEmpty) {
+        _inspectionDate = draft['inspectionDate'];
+      }
+
+      final rawTransformers = draft['transformersData'];
+      if (rawTransformers is Map) {
+        rawTransformers.forEach((txNumber, itemsList) {
+          final items = _transformerItemsMap[txNumber.toString()];
+          final controllers =
+              _transformerControllersMap[txNumber.toString()];
+          if (items != null && itemsList is List) {
+            for (final savedItem in itemsList) {
+              if (savedItem is Map) {
+                final id = savedItem['id']?.toString();
+                final isChecked = savedItem['isChecked'] == true;
+                final comment = savedItem['comment']?.toString() ?? '';
+                final matchIndex = items.indexWhere((i) => i.id == id);
+                if (matchIndex >= 0) {
+                  items[matchIndex].isChecked = isChecked;
+                  items[matchIndex].comment = comment;
+                  if (controllers != null && controllers.containsKey(id)) {
+                    controllers[id]?.text = comment;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      final savedTxNum = draft['selectedTransformerNumber']?.toString();
+      if (savedTxNum != null) {
+        final match = txList.where((t) => t.number == savedTxNum);
+        if (match.isNotEmpty) {
+          _selectedTransformer = match.first;
+        }
+      }
+    }
+
     _items = _transformerItemsMap[_selectedTransformer.number]!;
-    _commentControllers = _transformerControllersMap[_selectedTransformer.number]!;
+    _commentControllers =
+        _transformerControllersMap[_selectedTransformer.number]!;
+  }
+
+  Future<void> _saveDraft({bool showSnackBar = true}) async {
+    setState(() => _isSavingDraft = true);
+
+    // Sync current active controllers into comments
+    for (var item in _items) {
+      final ctrl = _commentControllers[item.id];
+      if (ctrl != null) {
+        item.comment = ctrl.text.trim();
+      }
+    }
+
+    final Map<String, dynamic> transformersData = {};
+    _transformerItemsMap.forEach((txNumber, items) {
+      final controllers = _transformerControllersMap[txNumber];
+      transformersData[txNumber] = items.map((item) {
+        final comment = controllers?[item.id]?.text.trim() ?? item.comment;
+        return {
+          'id': item.id,
+          'isChecked': item.isChecked,
+          'comment': comment,
+        };
+      }).toList();
+    });
+
+    final currentChecked = _items.where((i) => i.isChecked).length;
+    final currentStep =
+        'المحول ${_selectedTransformer.number} ($currentChecked من ${_items.length} بند)';
+
+    final draftId = widget.draftData?['id']?.toString() ??
+        'tx_chk_${_selectedSubstation.name}_${_selectedTransformer.number}_${DateTime.now().millisecondsSinceEpoch}';
+
+    final draft = DraftModel(
+      id: draftId,
+      formId: 'transformer_checklist',
+      formTitle: 'Checklist for Substation Power Transformer',
+      formCode: 'CL-GM-1400-002-002',
+      workOrderNo: (widget.initialWorkOrder != null &&
+              widget.initialWorkOrder!.isNotEmpty)
+          ? widget.initialWorkOrder!
+          : 'بدون أمر عمل',
+      substation: _selectedSubstation.name,
+      stepDescription: currentStep,
+      createdAt: widget.draftData?['createdAt']?.toString() ??
+          DateTime.now().toIso8601String(),
+      updatedAt: DateTime.now().toIso8601String(),
+      data: {
+        'id': draftId,
+        'substation': _selectedSubstation.name,
+        'selectedTransformerNumber': _selectedTransformer.number,
+        'division':
+            widget.initialDivision ?? _selectedSubstation.division,
+        'department':
+            widget.initialDepartment ?? _selectedSubstation.department,
+        'contactPerson': widget.initialContactPerson ?? '',
+        'workOrderNo': widget.initialWorkOrder ?? '',
+        'inspectionDate': widget.initialInspectionDate ?? _inspectionDate,
+        'transformersData': transformersData,
+      },
+    );
+
+    final success = await DraftStorageService.saveDraft(draft);
+
+    if (mounted) {
+      setState(() => _isSavingDraft = false);
+      if (showSnackBar) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  success
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.error_outline_rounded,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    success
+                        ? 'تم حفظ المسودة بنجاح (صالحة لمدة 24 ساعة للخانة الحالية)'
+                        : 'حدث خطأ أثناء حفظ المسودة',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor:
+                success ? const Color(0xFF0F766E) : Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   void _selectTransformer(TransformerInfo tx) {
@@ -552,6 +699,17 @@ class _TransformerChecklistScreenState
         ),
         actions: [
           IconButton(
+            icon: _isSavingDraft
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.bookmark_border_rounded),
+            tooltip: 'حفظ المسودة (24 ساعة)',
+            onPressed: _isSavingDraft ? null : () => _saveDraft(),
+          ),
+          IconButton(
             icon: const Icon(Icons.picture_as_pdf_rounded),
             tooltip: 'معاينة ملف PDF الرسمي',
             onPressed: _previewOfficialPdf,
@@ -728,63 +886,116 @@ class _TransformerChecklistScreenState
             ],
           ),
           const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F766E),
-                disabledBackgroundColor: isDark
-                    ? const Color(0xFF1E293B)
-                    : const Color(0xFFE2E8F0),
-                foregroundColor: Colors.white,
-                disabledForegroundColor: isDark
-                    ? Colors.grey.shade600
-                    : Colors.grey.shade500,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+          Row(
+            children: [
+              // Save Draft button
+              Expanded(
+                flex: 1,
+                child: OutlinedButton(
+                  onPressed: _isSavingDraft ? null : () => _saveDraft(),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF1F5F9),
+                    foregroundColor: isDark
+                        ? const Color(0xFFCBD5E1)
+                        : const Color(0xFF334155),
+                    side: BorderSide(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFCBD5E1),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: _isSavingDraft
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.bookmark_border_rounded, size: 18),
+                            SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'حفظ المسودة',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
-                elevation: canProceed ? 3 : 0,
               ),
-              icon: Icon(
-                isLast
-                    ? (allDone ? Icons.verified_rounded : Icons.arrow_forward_rounded)
-                    : Icons.arrow_forward_rounded,
-                size: 22,
-                color: canProceed
-                    ? Colors.white
-                    : (isDark ? Colors.grey.shade600 : Colors.grey.shade400),
-              ),
-              label: Text(
-                !isLast
-                    ? (isAllCompleted
-                        ? 'المعدة التالية (${nextTx?.number})'
-                        : 'المعدة التالية (متبقي $remainingCount بند)')
-                    : (allDone
-                        ? 'التالي (الانتقال للاعتماد)'
-                        : 'التالي (متبقي $remainingCount بند)'),
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: canProceed
-                      ? Colors.white
-                      : (isDark ? Colors.grey.shade600 : Colors.grey.shade400),
-                ),
-              ),
-              onPressed: canProceed
-                  ? () {
-                      if (!isLast && nextTx != null) {
-                        _selectTransformer(nextTx);
-                        if (_scrollController.hasClients) {
-                          _scrollController.animateTo(
-                            0,
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.easeOutCubic,
-                          );
-                        }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('تم الانتقال لفحص المحول التالي: ${nextTx.number} (${nextTx.voltage})'),
+              const SizedBox(width: 10),
+
+              // Next / Approval Action button
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
+                    disabledBackgroundColor: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFE2E8F0),
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: isDark
+                        ? Colors.grey.shade600
+                        : Colors.grey.shade500,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: canProceed ? 3 : 0,
+                  ),
+                  icon: Icon(
+                    isLast
+                        ? (allDone ? Icons.verified_rounded : Icons.arrow_forward_rounded)
+                        : Icons.arrow_forward_rounded,
+                    size: 20,
+                    color: canProceed
+                        ? Colors.white
+                        : (isDark ? Colors.grey.shade600 : Colors.grey.shade400),
+                  ),
+                  label: Text(
+                    !isLast
+                        ? (isAllCompleted
+                            ? 'المعدة التالية (${nextTx?.number})'
+                            : 'المعدة التالية (متبقي $remainingCount بند)')
+                        : (allDone
+                            ? 'التالي (الانتقال للاعتماد)'
+                            : 'التالي (متبقي $remainingCount بند)'),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: canProceed
+                          ? Colors.white
+                          : (isDark ? Colors.grey.shade600 : Colors.grey.shade400),
+                    ),
+                  ),
+                  onPressed: canProceed
+                      ? () {
+                          if (!isLast && nextTx != null) {
+                            _selectTransformer(nextTx);
+                            if (_scrollController.hasClients) {
+                              _scrollController.animateTo(
+                                0,
+                                duration: const Duration(milliseconds: 350),
+                                curve: Curves.easeOutCubic,
+                              );
+                            }
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('تم الانتقال لفحص المحول التالي: ${nextTx.number} (${nextTx.voltage})'),
                             backgroundColor: const Color(0xFF0F766E),
                             behavior: SnackBarBehavior.floating,
                             duration: const Duration(seconds: 2),
@@ -799,7 +1010,9 @@ class _TransformerChecklistScreenState
           ),
         ],
       ),
-    );
+    ],
+  ),
+);
   }
 
   Widget _buildOfficialHeaderCard(bool isDark) {

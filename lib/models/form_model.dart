@@ -377,5 +377,93 @@ class SampleFormData {
         ),
       ],
     ),
+
+    // 4. Sample Acknowledgement Form (FM-GM-3200-001-001 / NGC_00064_FO_001)
+    FormModel(
+      id: 'sample_acknowledgement',
+      title: 'Sample Acknowledgement Form',
+      subtitle: 'نموذج إقرار استلام عينات الزيت - إدارة خدمات الصيانة وقسم عمليات المختبرات',
+      category: 'صيانة محطات التحويل',
+      code: 'FM-GM-3200-001-001',
+      estimatedTime: '3 دقائق',
+      icon: Icons.assignment_turned_in_rounded,
+      primaryColor: const Color(0xFF1E3A8A),
+      secondaryColor: const Color(0xFF3B82F6),
+      fields: [
+        const FormFieldModel(
+          id: 'work_order',
+          label: 'رقم أمر العمل (Work Order)',
+          hint: 'مثال: WO-2026-9901',
+          type: FieldType.text,
+          isRequired: false,
+          icon: Icons.receipt_long_rounded,
+        ),
+        const FormFieldModel(
+          id: 'lab',
+          label: 'المختبر (Lab)',
+          hint: 'RYD / JED / DMM / QSM / ABH / EXTERNAL',
+          type: FieldType.dropdown,
+          isRequired: false,
+          icon: Icons.biotech_rounded,
+          options: ['RYD', 'JED', 'DMM', 'QSM', 'ABH', 'EXTERNAL'],
+        ),
+        const FormFieldModel(
+          id: 'substation_name',
+          label: 'اسم محطة التحويل S/S (Name/ID)',
+          hint: 'مثال: JIC 380/110kV',
+          type: FieldType.text,
+          isRequired: true,
+          icon: Icons.account_balance_rounded,
+        ),
+        const FormFieldModel(
+          id: 'equipment_type',
+          label: 'نوع المعدة (Equipment Type)',
+          hint: 'Transformer, Reactor, Cable, UG cable, OLTC, Others',
+          type: FieldType.text,
+          isRequired: true,
+          icon: Icons.bolt_rounded,
+        ),
+      ],
+    ),
+
+    // 5. Checklist for Mineral Oil Power Transformers and Reactors Annual Detail Inspection (CL-GM-1600-004-002)
+    FormModel(
+      id: 'annual_detail_inspection',
+      title: 'Annual Detail Inspection',
+      subtitle: 'قائمة فحص وتدقيق محولات ومفاعلات القدرة ذات الزيت المعدني السنوي التفصيلي - نقل الكهرباء',
+      category: 'صيانة محطات التحويل',
+      code: 'CL-GM-1600-004-002',
+      estimatedTime: '8 دقائق',
+      icon: Icons.assignment_turned_in_rounded,
+      primaryColor: const Color(0xFF0F2C59),
+      secondaryColor: const Color(0xFF1D4ED8),
+      fields: [
+        const FormFieldModel(
+          id: 'substation',
+          label: 'محطة التحويل (Substation)',
+          hint: 'مثال: JIC 380/110kV Substation',
+          type: FieldType.text,
+          isRequired: true,
+          icon: Icons.account_balance_rounded,
+        ),
+        const FormFieldModel(
+          id: 'transformer_designation',
+          label: 'مسمى المحول (Transformer Designation)',
+          hint: 'مثال: T601',
+          type: FieldType.text,
+          isRequired: true,
+          icon: Icons.electric_bolt_rounded,
+        ),
+        const FormFieldModel(
+          id: 'work_order_no',
+          label: 'رقم أمر العمل (Work Order No.)',
+          hint: 'مثال: 8842910',
+          type: FieldType.text,
+          isRequired: true,
+          icon: Icons.confirmation_number_outlined,
+        ),
+      ],
+    ),
   ];
 }
+

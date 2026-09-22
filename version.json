@@ -1,10 +1,8 @@
-﻿{
+{
   "latest_version": "1.0.10",
   "build_number": 11,
-  "apk_url": "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk",
-  "release_notes": "✨ أبرز ما تم في تحديث الإصدار v1.0.10: 
-• تعطيل زر نموذج Sample Acknowledgement Form مؤقتاً في الشاشة الرئيسية لحين تعديله مستقبلاً.
-• تحسينات عامة في الأداء ومزامنة البيانات وثبات النظام.",
+  "apk_url": "https://github.com/TQAPPS/eforms-releases/releases/download/v1.0.10/app-release.apk",
+  "release_notes": "• إصدار جديد v1.0.10",
   "force_update": false,
   "publish_date": "2026-09-22"
 }

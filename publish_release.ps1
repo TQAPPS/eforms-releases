@@ -69,7 +69,7 @@ if ([string]::IsNullOrWhiteSpace($ReleaseNotes)) {
     $ReleaseNotes = "Release v$targetVersion with latest features and optimizations."
 }
 
-$escapedNotes = $ReleaseNotes.Replace('"', '\"')
+$escapedNotes = $ReleaseNotes.Replace('\', '\\').Replace('"', '\"').Replace("`r`n", "\n").Replace("`n", "\n")
 $versionJsonContent = @"
 {
   "latest_version": "$targetVersion",
@@ -81,7 +81,8 @@ $versionJsonContent = @"
 }
 "@
 
-[System.IO.File]::WriteAllText((Resolve-Path "version.json"), $versionJsonContent, [System.Text.Encoding]::UTF8)
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText((Resolve-Path "version.json"), $versionJsonContent, $utf8NoBom)
 Write-Host "Updated version.json with direct download URL and metadata." -ForegroundColor Green
 
 # 6. Git Commit and Push to GitHub (including APK and version.json)

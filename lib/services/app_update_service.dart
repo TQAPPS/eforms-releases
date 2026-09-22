@@ -79,7 +79,11 @@ class AppUpdateService {
       if (response.statusCode == 200 && response.data != null) {
         dynamic rawData = response.data;
         if (rawData is String) {
-          rawData = jsonDecode(rawData);
+          String cleaned = rawData.trim();
+          if (cleaned.startsWith('\uFEFF')) {
+            cleaned = cleaned.substring(1).trim();
+          }
+          rawData = jsonDecode(cleaned);
         }
 
         if (rawData is Map) {

@@ -62,9 +62,9 @@ class _DraftsScreenState extends State<DraftsScreen> {
         ),
       );
     } else if (draft.formId == 'grid_maintenance') {
-      final sub = NationalGridData.substations.firstWhere(
+      final sub = NationalGridData.jizanSubstations.firstWhere(
         (s) => s.name == draft.substation,
-        orElse: () => NationalGridData.substations.first,
+        orElse: () => NationalGridData.jizanSubstations.first,
       );
       final form = SampleFormData.defaultForms.firstWhere(
         (f) => f.id == 'grid_maintenance',
@@ -82,9 +82,9 @@ class _DraftsScreenState extends State<DraftsScreen> {
         ),
       );
     } else if (draft.formId == 'transformer_checklist') {
-      final sub = NationalGridData.substations.firstWhere(
+      final sub = NationalGridData.jizanSubstations.firstWhere(
         (s) => s.name == draft.substation,
-        orElse: () => NationalGridData.substations.first,
+        orElse: () => NationalGridData.jizanSubstations.first,
       );
       final form = SampleFormData.defaultForms.firstWhere(
         (f) => f.id == 'transformer_checklist',
@@ -287,14 +287,18 @@ class _DraftsScreenState extends State<DraftsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text(
-                                'الملفات بانتظار استكمال التعبئة',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
+                              const Expanded(
+                                child: Text(
+                                  'الملفات بانتظار استكمال التعبئة',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const Spacer(),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 3),

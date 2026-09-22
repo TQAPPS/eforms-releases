@@ -57,6 +57,43 @@ class TransformerInfo {
     }
     return 'Outdoor Bushings';
   }
+
+  Map<String, dynamic> toJson() => {
+        'number': number,
+        'voltage': voltage,
+        if (serial != null) 'serial': serial,
+        if (manufacturer != null) 'manufacturer': manufacturer,
+        if (mva != null) 'mva': mva,
+        if (yearManufacture != null) 'yearManufacture': yearManufacture,
+        if (connectionHv != null) 'connectionHv': connectionHv,
+        if (connectionLv != null) 'connectionLv': connectionLv,
+        if (connectionTv != null) 'connectionTv': connectionTv,
+      };
+
+  factory TransformerInfo.fromJson(Map<String, dynamic> json) => TransformerInfo(
+        number: json['number']?.toString() ?? '',
+        voltage: json['voltage']?.toString() ?? '',
+        serial: json['serial']?.toString(),
+        manufacturer: json['manufacturer']?.toString(),
+        mva: json['mva']?.toString(),
+        yearManufacture: json['yearManufacture']?.toString(),
+        connectionHv: json['connectionHv']?.toString(),
+        connectionLv: json['connectionLv']?.toString(),
+        connectionTv: json['connectionTv']?.toString(),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransformerInfo &&
+          runtimeType == other.runtimeType &&
+          number.trim().toLowerCase() == other.number.trim().toLowerCase() &&
+          voltage.trim().toLowerCase() == other.voltage.trim().toLowerCase();
+
+  @override
+  int get hashCode =>
+      number.trim().toLowerCase().hashCode ^
+      voltage.trim().toLowerCase().hashCode;
 }
 
 class SubstationModel {
@@ -77,6 +114,40 @@ class SubstationModel {
     required this.transformers,
     this.auxTransformers = const [],
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'region': region,
+        'division': division,
+        'department': department,
+        'transformers': transformers.map((t) => t.toJson()).toList(),
+        'auxTransformers': auxTransformers.map((t) => t.toJson()).toList(),
+      };
+
+  factory SubstationModel.fromJson(Map<String, dynamic> json) => SubstationModel(
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? '',
+        region: json['region']?.toString() ?? '',
+        division: json['division']?.toString() ?? 'SOD / Southern Operating Division',
+        department: json['department']?.toString() ?? 'Substation Maintenance Dept',
+        transformers: (json['transformers'] as List<dynamic>? ?? [])
+            .map((e) => TransformerInfo.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        auxTransformers: (json['auxTransformers'] as List<dynamic>? ?? [])
+            .map((e) => TransformerInfo.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SubstationModel &&
+          runtimeType == other.runtimeType &&
+          name.trim().toLowerCase() == other.name.trim().toLowerCase();
+
+  @override
+  int get hashCode => name.trim().toLowerCase().hashCode;
 }
 
 class NationalGridData {
@@ -123,7 +194,35 @@ class NationalGridData {
     return departments[division] ?? ['Substation Maintenance Dept'];
   }
 
-  static const List<SubstationModel> substations = [
+  /// Dynamic list of substations loaded from local cache or online sync.
+  static List<SubstationModel> substations = defaultSubstations;
+
+  /// قائمة محطات منطقة جازان فقط (Jizan Region Substations Only)
+  static List<SubstationModel> get jizanSubstations {
+    final list = substations.where(isJizan).toList();
+    final source = list.isNotEmpty ? list : defaultSubstations;
+    final seen = <String>{};
+    final uniqueList = <SubstationModel>[];
+    for (final sub in source) {
+      final key = sub.name.trim().toLowerCase();
+      if (seen.add(key)) {
+        uniqueList.add(sub);
+      }
+    }
+    return uniqueList;
+  }
+
+  /// التحقق إن كانت المحطة تتبع لمنطقة جازان
+  static bool isJizan(SubstationModel s) {
+    final r = s.region.trim().toUpperCase();
+    return r.contains('JIZAN') ||
+        r.contains('JAZAN') ||
+        r.contains('جازان') ||
+        r.contains('جيزان');
+  }
+
+  /// Built-in default fallback list of substations
+  static const List<SubstationModel> defaultSubstations = [
     SubstationModel(
       id: 'sub_1',
       name: 'JIC',

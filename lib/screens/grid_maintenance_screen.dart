@@ -66,9 +66,9 @@ class _GridMaintenanceScreenState extends State<GridMaintenanceScreen>
     });
 
     _currentSubstation = widget.selectedSubstation ??
-        NationalGridData.substations.firstWhere(
+        NationalGridData.jizanSubstations.firstWhere(
           (s) => s.name == 'JIC',
-          orElse: () => NationalGridData.substations.first,
+          orElse: () => NationalGridData.jizanSubstations.first,
         );
 
     _workOrderController =

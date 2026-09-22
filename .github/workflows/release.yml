@@ -59,10 +59,6 @@ jobs:
       - name: Setup Keystore & Signing Config
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_PROPERTIES: ${{ secrets.KEY_PROPERTIES }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: python3 scripts/setup_keystore.py
 
       - name: Install Dependencies

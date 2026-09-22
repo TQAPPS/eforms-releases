@@ -1,20 +1,22 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
+import '../models/exported_form_model.dart';
+import '../services/exported_forms_service.dart';
+import '../services/onedrive_service.dart';
 import '../services/report_upload_service.dart';
 
-enum ExportUploadPhase {
-  generatingPdf,
-  uploadingCloud,
-  completed,
-  error,
-}
+enum ExportUploadPhase { generatingPdf, uploadingCloud, completed, error }
 
 class ExportUploadProgressDialog extends StatefulWidget {
   final String substation;
   final String equipment;
   final String formType;
   final String technician;
+  final String? formId;
   final String? notes;
   final String? fileName;
   final Future<Uint8List> Function() onGeneratePdf;
@@ -26,6 +28,7 @@ class ExportUploadProgressDialog extends StatefulWidget {
     required this.equipment,
     required this.formType,
     required this.technician,
+    this.formId,
     this.notes,
     this.fileName,
     required this.onGeneratePdf,
@@ -39,6 +42,7 @@ class ExportUploadProgressDialog extends StatefulWidget {
     required String equipment,
     required String formType,
     required String technician,
+    String? formId,
     String? notes,
     String? fileName,
     required Future<Uint8List> Function() onGeneratePdf,
@@ -52,6 +56,7 @@ class ExportUploadProgressDialog extends StatefulWidget {
         equipment: equipment,
         formType: formType,
         technician: technician,
+        formId: formId,
         notes: notes,
         fileName: fileName,
         onGeneratePdf: onGeneratePdf,
@@ -65,8 +70,7 @@ class ExportUploadProgressDialog extends StatefulWidget {
       _ExportUploadProgressDialogState();
 }
 
-class _ExportUploadProgressDialogState
-    extends State<ExportUploadProgressDialog>
+class _ExportUploadProgressDialogState extends State<ExportUploadProgressDialog>
     with SingleTickerProviderStateMixin {
   ExportUploadPhase _phase = ExportUploadPhase.generatingPdf;
   late AnimationController _animController;
@@ -74,6 +78,7 @@ class _ExportUploadProgressDialogState
 
   Uint8List? _generatedPdfBytes;
   ReportUploadResult? _uploadResult;
+  bool? _oneDriveSuccess;
   String _errorMessage = '';
 
   @override
@@ -105,24 +110,79 @@ class _ExportUploadProgressDialogState
       final pdfBytes = await widget.onGeneratePdf();
       _generatedPdfBytes = pdfBytes;
 
-      // Step 2: Upload to Cloud (Google Drive via Google Apps Script Web App)
+      // Step 2: Upload to Cloud (Google Drive & OneDrive in parallel)
       if (mounted) setState(() => _phase = ExportUploadPhase.uploadingCloud);
 
-      final result = await ReportUploadService.uploadInspectionPdf(
+      final formTitle =
+          '${widget.substation}_${widget.equipment}_${widget.formType}';
+      final standardFileName = ExportedFormModel.buildFileName(
         substation: widget.substation,
         equipment: widget.equipment,
         formType: widget.formType,
-        technician: widget.technician,
-        notes: widget.notes,
-        fileName: widget.fileName,
-        pdfBytes: pdfBytes,
       );
+      final resolvedFileName =
+          (widget.fileName != null && widget.fileName!.trim().isNotEmpty)
+          ? widget.fileName!.trim()
+          : standardFileName;
+
+      final uploadResults = await Future.wait([
+        ReportUploadService.uploadInspectionPdf(
+          substation: widget.substation,
+          equipment: widget.equipment,
+          formType: widget.formType,
+          technician: widget.technician,
+          notes: widget.notes,
+          fileName: resolvedFileName,
+          pdfBytes: pdfBytes,
+        ),
+        OneDriveService.uploadPdfBytes(
+          pdfBytes: pdfBytes,
+          formTitle: formTitle,
+          fileName: resolvedFileName,
+          formId: widget.formId ?? widget.equipment,
+          employeeName: widget.technician,
+          formType: widget.formType,
+        ),
+      ]);
+
+      final result = uploadResults[0] as ReportUploadResult;
+      final oneDriveSuccess = uploadResults[1] as bool;
 
       _uploadResult = result;
+      _oneDriveSuccess = oneDriveSuccess;
 
       if (!mounted) return;
 
       if (result.isSuccess) {
+        String? localPath;
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final fileName =
+              result.fileName ?? widget.fileName ?? 'تقرير_فحص.pdf';
+          String cleanName = fileName.trim();
+          if (cleanName.toLowerCase().endsWith('.pdf')) {
+            cleanName = cleanName.substring(0, cleanName.length - 4);
+          }
+          cleanName = cleanName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+          final localFile = File('${appDir.path}/$cleanName.pdf');
+          await localFile.writeAsBytes(pdfBytes, flush: true);
+          localPath = localFile.path;
+        } catch (_) {}
+
+        final exportedForm = ExportedFormModel(
+          id: 'exp_${DateTime.now().millisecondsSinceEpoch}',
+          fileName: result.fileName ?? widget.fileName ?? 'تقرير_فحص.pdf',
+          substation: widget.substation,
+          equipment: widget.equipment,
+          formType: widget.formType,
+          technician: widget.technician,
+          notes: widget.notes,
+          driveUrl: result.driveFileUrl ?? '',
+          exportedAt: DateTime.now(),
+          fileSizeBytes: pdfBytes.length,
+          localFilePath: localPath,
+        );
+        ExportedFormsService.saveExportedForm(exportedForm);
         setState(() => _phase = ExportUploadPhase.completed);
       } else {
         setState(() {
@@ -144,13 +204,17 @@ class _ExportUploadProgressDialogState
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return PopScope(
-      canPop: _phase == ExportUploadPhase.completed ||
+      canPop:
+          _phase == ExportUploadPhase.completed ||
           _phase == ExportUploadPhase.error,
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
           child: Container(
             constraints: const BoxConstraints(maxWidth: 420),
             padding: const EdgeInsets.fromLTRB(22, 26, 22, 20),
@@ -158,7 +222,9 @@ class _ExportUploadProgressDialogState
               color: isDark ? const Color(0xFF0F2643) : Colors.white,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: isDark ? const Color(0xFF1E40AF) : const Color(0xFFBAE6FD),
+                color: isDark
+                    ? const Color(0xFF1E40AF)
+                    : const Color(0xFFBAE6FD),
                 width: 1.2,
               ),
               boxShadow: [
@@ -249,12 +315,9 @@ class _ExportUploadProgressDialogState
         Text(
           isGenerating
               ? 'جاري إعداد وتصدير ملف PDF...'
-              : 'جاري الأرشفة والرفع إلى Google Drive...',
+              : 'جاري الأرشفة والرفع إلى المجلد السحابي...',
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 16.5,
-            fontWeight: FontWeight.w900,
-          ),
+          style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
 
@@ -262,7 +325,7 @@ class _ExportUploadProgressDialogState
         Text(
           isGenerating
               ? 'يتم الآن تجميع الجداول، الرسوم، والتوقيعات الرقمية المعتمدة.'
-              : 'يتم تشفير الملف ورفعه تلقائياً وتوليد رابط المشاركة السحابي.',
+              : 'يتم تشفير الملف ورفعه تلقائياً إلى المجلد السحابي بالتزامن.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 12.5,
@@ -295,7 +358,10 @@ class _ExportUploadProgressDialogState
   }
 
   /// Multi-step indicator: [1. إنشاء PDF] ➔ [2. رفع Drive]
-  Widget _buildMultiStepTracker({required int activeStep, required bool isDark}) {
+  Widget _buildMultiStepTracker({
+    required int activeStep,
+    required bool isDark,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -393,10 +459,7 @@ class _ExportUploadProgressDialogState
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: const Color(0xFF10B981).withValues(alpha: 0.15),
-            border: Border.all(
-              color: const Color(0xFF10B981),
-              width: 2.0,
-            ),
+            border: Border.all(color: const Color(0xFF10B981), width: 2.0),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFF10B981).withValues(alpha: 0.35),
@@ -417,17 +480,14 @@ class _ExportUploadProgressDialogState
         // Title
         const Text(
           'تم التصدير والرفع بنجاح!',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
 
         // Subtitle message
         Text(
           _uploadResult?.message ??
-              'تم حفظ التقرير محلياً وأرشفته بنجاح في Google Drive.',
+              'تم حفظ التقرير محلياً وأرشفته بنجاح في المجلد السحابي.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 12.5,
@@ -456,68 +516,56 @@ class _ExportUploadProgressDialogState
           ),
         ),
 
-        // Drive URL Box (with quick Copy)
-        if (driveUrl != null && driveUrl.isNotEmpty) ...[
+        // Cloud Storage Status Card
+        if (_oneDriveSuccess != null) ...[
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
-              color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+              color: _oneDriveSuccess == true
+                  ? const Color(0xFF0078D4).withValues(alpha: 0.1)
+                  : const Color(0xFFF59E0B).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.35),
+                color: _oneDriveSuccess == true
+                    ? const Color(0xFF0078D4).withValues(alpha: 0.35)
+                    : const Color(0xFFF59E0B).withValues(alpha: 0.35),
               ),
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.link_rounded,
-                  color: Color(0xFF38BDF8),
+                Icon(
+                  _oneDriveSuccess == true
+                      ? Icons.cloud_done_rounded
+                      : Icons.cloud_off_rounded,
+                  color: _oneDriveSuccess == true
+                      ? const Color(0xFF0078D4)
+                      : const Color(0xFFF59E0B),
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    driveUrl,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF38BDF8),
-                      fontFamily: 'monospace',
+                    _oneDriveSuccess == true
+                        ? 'تم الرفع والأرشفة في المجلد السحابي بنجاح'
+                        : 'تعذر الرفع المباشر إلى المجلد السحابي',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: _oneDriveSuccess == true
+                          ? (isDark
+                                ? const Color(0xFF60A5FA)
+                                : const Color(0xFF0078D4))
+                          : const Color(0xFFF59E0B),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: driveUrl));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('تم نسخ رابط Google Drive إلى الحافظة'),
-                        duration: Duration(seconds: 2),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0284C7),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'نسخ الرابط',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                if (_oneDriveSuccess == true)
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    size: 16,
+                    color: Color(0xFF10B981),
                   ),
-                ),
               ],
             ),
           ),
@@ -544,10 +592,7 @@ class _ExportUploadProgressDialogState
                 icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
                 label: const Text(
                   'معاينة ملف PDF',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
                   Navigator.pop(context); // Close dialog
@@ -559,13 +604,14 @@ class _ExportUploadProgressDialogState
             ),
             const SizedBox(width: 10),
 
-            // Close / Done Button
+            // Home / الرئيسية Button
             Expanded(
               flex: 2,
-              child: OutlinedButton(
+              child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor:
-                      isDark ? Colors.white70 : const Color(0xFF334155),
+                  foregroundColor: isDark
+                      ? Colors.white70
+                      : const Color(0xFF334155),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -576,11 +622,14 @@ class _ExportUploadProgressDialogState
                         : const Color(0xFFCBD5E1),
                   ),
                 ),
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'تم',
+                icon: const Icon(Icons.home_rounded, size: 18),
+                label: const Text(
+                  'الرئيسية',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
+                onPressed: () {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
               ),
             ),
           ],
@@ -607,9 +656,7 @@ class _ExportUploadProgressDialogState
                 ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
                 : const Color(0xFFEF4444).withValues(alpha: 0.15),
             border: Border.all(
-              color: hasPdf
-                  ? const Color(0xFFF59E0B)
-                  : const Color(0xFFEF4444),
+              color: hasPdf ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
               width: 2.0,
             ),
           ),
@@ -627,10 +674,7 @@ class _ExportUploadProgressDialogState
               ? 'تم تصدير الـ PDF ولكن تعذر الرفع السحابي'
               : 'حدث خطأ أثناء العملية',
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
 
@@ -660,14 +704,12 @@ class _ExportUploadProgressDialogState
                   icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
                   label: const Text(
                     'معاينة الـ PDF',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   onPressed: () {
                     Navigator.pop(context);
-                    if (widget.onPreview != null && _generatedPdfBytes != null) {
+                    if (widget.onPreview != null &&
+                        _generatedPdfBytes != null) {
                       widget.onPreview!(_generatedPdfBytes!, null);
                     }
                   },
@@ -678,8 +720,9 @@ class _ExportUploadProgressDialogState
             Expanded(
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor:
-                      isDark ? Colors.white70 : const Color(0xFF334155),
+                  foregroundColor: isDark
+                      ? Colors.white70
+                      : const Color(0xFF334155),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),

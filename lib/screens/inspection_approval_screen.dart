@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/exported_form_model.dart';
 import '../models/substation_model.dart';
 import '../services/draft_storage_service.dart';
 import '../services/pdf_generator_service.dart';
@@ -116,19 +117,22 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
             .map((e) => e['txName']?.toString() ?? 'TR')
             .join(', ')
         : 'Power Transformers';
-    final fileName =
-        'INSPECTION_${widget.substation.name}_${widget.workOrder}_$refNumber.pdf'
-            .replaceAll('/', '_')
-            .replaceAll(' ', '_');
+    const formType = 'Power Transformer Detailed Monthly Inspection';
+    final fileName = ExportedFormModel.buildFileName(
+      substation: widget.substation.name,
+      equipment: eqName,
+      formType: formType,
+    );
 
     await ExportUploadProgressDialog.show(
       context: context,
       substation: widget.substation.name,
       equipment: eqName,
-      formType: 'GRID MAINTENANCE - فحص المحولات الشهري',
+      formType: formType,
       technician: _inspectorController.text.trim().isNotEmpty
           ? _inspectorController.text.trim()
           : 'Inspector',
+      formId: widget.workOrder,
       notes: _notesController.text.trim(),
       fileName: fileName,
       onGeneratePdf: () async {
@@ -165,10 +169,11 @@ class _InspectionApprovalScreenState extends State<InspectionApprovalScreen> {
               workOrder: widget.workOrder,
               substationName: widget.substation.name,
               equipment: eqName,
-              formType: 'GRID MAINTENANCE - فحص المحولات الشهري',
+              formType: formType,
               technician: _inspectorController.text.trim(),
               notes: _notesController.text.trim(),
               initialDriveUrl: driveUrl,
+              pdfFileName: fileName,
             ),
           ),
         );

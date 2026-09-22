@@ -4,9 +4,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
+import 'services/substation_data_service.dart';
+import 'services/remote_config_helper.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  RemoteConfigHelper.updateConfig();
+  await SubstationDataService.init();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

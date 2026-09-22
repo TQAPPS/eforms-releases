@@ -1,8 +1,10 @@
-{
-  "latest_version": "1.0.9",
-  "build_number": 10,
-  "apk_url": "https://github.com/TQAPPS/eforms-releases/releases/download/v1.0.9/app-release.apk",
-  "release_notes": "✨ أبرز ما تم في تحديث الإصدار v1.0.9:\n\n📋 فحص Annual Detail:\n• إضافة شروط التحقق لمنع الانتقال وحفظ النماذج قبل استكمال كافة التبويبات واشتراط اعتماد الفاحص.\n\n🎨 تحسينات الواجهة والتصميم:\n• توسيط أيقونات الأزرار في الشاشة الرئيسية لمظهر متناسق.\n• معالجة مشكلة تجاوز المساحة (Overflow) في نافذة عينات الزيت.\n• تحديث أيقونة الملاحظات لكافة العناصر.\n\n🚀 أداء وثبات عام للنظام.",
+﻿{
+  "latest_version": "1.0.10",
+  "build_number": 11,
+  "apk_url": "https://github.com/TQAPPS/eforms-releases/raw/main/releases/app-release.apk",
+  "release_notes": "✨ أبرز ما تم في تحديث الإصدار v1.0.10: 
+• تعطيل زر نموذج Sample Acknowledgement Form مؤقتاً في الشاشة الرئيسية لحين تعديله مستقبلاً.
+• تحسينات عامة في الأداء ومزامنة البيانات وثبات النظام.",
   "force_update": false,
-  "publish_date": "2026-09-12"
+  "publish_date": "2026-09-22"
 }

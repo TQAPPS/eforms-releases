@@ -5,6 +5,7 @@ import 'package:e_forms_app/models/substation_model.dart';
 import 'package:e_forms_app/screens/inspection_approval_screen.dart';
 import 'package:e_forms_app/services/app_update_service.dart';
 import 'package:e_forms_app/services/pdf_generator_service.dart';
+import 'package:e_forms_app/services/substation_data_service.dart';
 
 Future<void> _openInspectionScreen(WidgetTester tester) async {
   await tester.tap(find.text('Monthly Inspection Power Transformer').first);
@@ -21,6 +22,7 @@ Future<void> _openInspectionScreen(WidgetTester tester) async {
 void main() {
   setUpAll(() {
     AppUpdateService.isEnabled = false;
+    SubstationDataService.isAutoSyncEnabled = false;
   });
 
   testWidgets('App renders homepage with 4 form buttons including Monthly Inspection Power Transformer', (WidgetTester tester) async {

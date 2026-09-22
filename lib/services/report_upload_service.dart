@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 
 import '../config/app_upload_config.dart';
+import '../models/exported_form_model.dart';
 
 class ReportUploadResult {
   final bool isSuccess;
@@ -37,12 +37,14 @@ class ReportUploadService {
     client.connectionTimeout = const Duration(seconds: 45);
 
     try {
-      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final safeSub = substation.trim().replaceAll(RegExp(r'[^\w\s\u0600-\u06FF-]'), '_').replaceAll(' ', '_');
-      final safeEq = equipment.trim().replaceAll(RegExp(r'[^\w\s\u0600-\u06FF-]'), '_').replaceAll(' ', '_');
-      final resolvedFileName = fileName != null && fileName.trim().isNotEmpty
+      final standardFileName = ExportedFormModel.buildFileName(
+        substation: substation,
+        equipment: equipment,
+        formType: formType,
+      );
+      final resolvedFileName = (fileName != null && fileName.trim().isNotEmpty)
           ? fileName.trim()
-          : '${safeSub}_${safeEq}_$timestamp.pdf';
+          : standardFileName;
 
       final pdfBase64 = base64Encode(pdfBytes);
 

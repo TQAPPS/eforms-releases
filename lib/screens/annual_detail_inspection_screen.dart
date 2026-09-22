@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../models/annual_detail_inspection_model.dart';
+import '../models/exported_form_model.dart';
 import '../models/form_model.dart';
 import '../models/substation_model.dart';
 import '../services/annual_detail_inspection_storage_service.dart';
@@ -243,7 +244,7 @@ class _AnnualDetailInspectionScreenState
           TextEditingController(text: existing.voltageRatio);
 
       SubstationModel? matchedSub;
-      for (final s in NationalGridData.substations) {
+      for (final s in NationalGridData.jizanSubstations) {
         if (s.name.trim().toLowerCase() ==
                 existing.substation.trim().toLowerCase() ||
             s.id.trim().toLowerCase() ==
@@ -253,8 +254,8 @@ class _AnnualDetailInspectionScreenState
         }
       }
       matchedSub ??= widget.initialSubstation ??
-          (NationalGridData.substations.isNotEmpty
-              ? NationalGridData.substations.first
+          (NationalGridData.jizanSubstations.isNotEmpty
+              ? NationalGridData.jizanSubstations.first
               : null);
 
       TransformerInfo? matchedEq;
@@ -352,7 +353,7 @@ class _AnnualDetailInspectionScreenState
 
       // If substation is missing, but equipment is provided, locate the substation
       if (sub == null && eq != null) {
-        for (final s in NationalGridData.substations) {
+        for (final s in NationalGridData.jizanSubstations) {
           if (s.transformers.contains(eq) || s.auxTransformers.contains(eq)) {
             sub = s;
             break;
@@ -361,10 +362,10 @@ class _AnnualDetailInspectionScreenState
       }
 
       // If substation still missing, fallback to KFH or first substation
-      if (sub == null && NationalGridData.substations.isNotEmpty) {
-        sub = NationalGridData.substations.firstWhere(
+      if (sub == null && NationalGridData.jizanSubstations.isNotEmpty) {
+        sub = NationalGridData.jizanSubstations.firstWhere(
           (s) => s.name == 'KFH',
-          orElse: () => NationalGridData.substations.first,
+          orElse: () => NationalGridData.jizanSubstations.first,
         );
       }
 
@@ -616,23 +617,26 @@ class _AnnualDetailInspectionScreenState
     }
 
     final model = _buildCurrentModel('completed');
-    final dateStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-    final safeSub = model.substation.replaceAll('/', '_').replaceAll(' ', '_');
-    final safeEq = model.transformerDesignation.isNotEmpty
-        ? model.transformerDesignation.replaceAll('/', '_').replaceAll(' ', '_')
+    const formType =
+        'Checklist for Mineral Oil Power Transformers and Reactors Annual Detail Inspection';
+    final equipment = model.transformerDesignation.isNotEmpty
+        ? model.transformerDesignation
         : 'Transformer';
-    final fileName = 'AnnualInspection_${safeSub}_${safeEq}_$dateStr.pdf';
+    final fileName = ExportedFormModel.buildFileName(
+      substation: model.substation,
+      equipment: equipment,
+      formType: formType,
+    );
 
     await ExportUploadProgressDialog.show(
       context: context,
       substation: model.substation,
-      equipment: model.transformerDesignation.isNotEmpty
-          ? model.transformerDesignation
-          : 'Transformer',
-      formType: 'Mineral Oil Power Transformers & Reactors Annual Inspection',
+      equipment: equipment,
+      formType: formType,
       technician: model.inspectedByName.isNotEmpty
           ? model.inspectedByName
           : 'Technician',
+      formId: model.workOrderNo,
       notes: model.comments,
       fileName: fileName,
       onGeneratePdf: () async {
@@ -661,18 +665,14 @@ class _AnnualDetailInspectionScreenState
               pdfBytes: pdfBytes,
               workOrder: model.workOrderNo,
               substationName: model.substation,
-              equipment: model.transformerDesignation.isNotEmpty
-                  ? model.transformerDesignation
-                  : 'Transformer',
-              formType:
-                  'Mineral Oil Power Transformers & Reactors Annual Inspection',
+              equipment: equipment,
+              formType: formType,
               technician: model.inspectedByName,
               notes: model.comments,
               initialDriveUrl: driveUrl,
               pageTitle:
                   'Mineral Oil Power Transformers & Reactors Annual Inspection',
-              pdfFileName:
-                  'CL-GM-1600-004-002_${model.workOrderNo.replaceAll('/', '_')}.pdf',
+              pdfFileName: fileName,
             ),
           ),
         );

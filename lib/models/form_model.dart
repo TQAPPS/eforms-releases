@@ -42,6 +42,8 @@ class FormModel {
   final Color secondaryColor;
   final List<FormFieldModel> fields;
 
+  bool get isEnabled => id != 'sample_acknowledgement';
+
   const FormModel({
     required this.id,
     required this.title,

@@ -160,6 +160,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
 
   void _openForm(BuildContext context, FormModel form) {
+    if (!form.isEnabled) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.info_outline_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'نموذج "${form.title}" غير متاح حالياً (قيد التحديث والتطوير)',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF1E293B),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     if (form.id == 'grid_maintenance') {
       _showStartInspectionDialog(context, form);
       return;
@@ -188,9 +213,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _showStartSampleAcknowledgementDialog(
       BuildContext context, FormModel form) {
-    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
+    SubstationModel selectedSubstation = NationalGridData.jizanSubstations.firstWhere(
       (s) => s.name == 'JIC',
-      orElse: () => NationalGridData.substations.first,
+      orElse: () => NationalGridData.jizanSubstations.first,
     );
     final allUnits = <TransformerInfo>[
       ...selectedSubstation.transformers,
@@ -325,39 +350,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           child: DropdownButtonHideUnderline(
-                            child: DropdownButton<SubstationModel>(
-                              value: selectedSubstation,
-                              isExpanded: true,
-                              icon: const Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: Color(0xFF1D4ED8),
-                              ),
-                              items: NationalGridData.substations.map((sub) {
-                                return DropdownMenuItem<SubstationModel>(
-                                  value: sub,
-                                  child: Text(
-                                    '${sub.name} (${sub.region})',
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                            child: Builder(
+                              builder: (context) {
+                                final currentList =
+                                    NationalGridData.jizanSubstations;
+                                final currentSubstation = currentList.contains(selectedSubstation)
+                                    ? selectedSubstation
+                                    : (currentList.any((s) =>
+                                            s.name.trim().toLowerCase() ==
+                                            selectedSubstation.name.trim().toLowerCase())
+                                        ? currentList.firstWhere((s) =>
+                                            s.name.trim().toLowerCase() ==
+                                            selectedSubstation.name.trim().toLowerCase())
+                                        : currentList.first);
+                                return DropdownButton<SubstationModel>(
+                                  value: currentSubstation,
+                                  isExpanded: true,
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: Color(0xFF1D4ED8),
                                   ),
+                                  items: currentList.map((sub) {
+                                    return DropdownMenuItem<SubstationModel>(
+                                      value: sub,
+                                      child: Text(
+                                        '${sub.name} (${sub.region})',
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (newSub) {
+                                    if (newSub != null) {
+                                      setDialogState(() {
+                                        selectedSubstation = newSub;
+                                        final newUnits = <TransformerInfo>[
+                                          ...newSub.transformers,
+                                          ...newSub.auxTransformers,
+                                        ];
+                                        selectedEquipment = newUnits.isNotEmpty
+                                            ? newUnits.first
+                                            : null;
+                                      });
+                                    }
+                                  },
                                 );
-                              }).toList(),
-                              onChanged: (newSub) {
-                                if (newSub != null) {
-                                  setDialogState(() {
-                                    selectedSubstation = newSub;
-                                    final newUnits = <TransformerInfo>[
-                                      ...newSub.transformers,
-                                      ...newSub.auxTransformers,
-                                    ];
-                                    selectedEquipment = newUnits.isNotEmpty
-                                        ? newUnits.first
-                                        : null;
-                                  });
-                                }
                               },
                             ),
                           ),
@@ -526,9 +566,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _showStartAnnualInspectionDialog(
       BuildContext context, FormModel form) {
-    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
+    SubstationModel selectedSubstation = NationalGridData.jizanSubstations.firstWhere(
       (s) => s.name == 'JIC',
-      orElse: () => NationalGridData.substations.first,
+      orElse: () => NationalGridData.jizanSubstations.first,
     );
     final allUnits = <TransformerInfo>[
       ...selectedSubstation.transformers,
@@ -662,39 +702,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           child: DropdownButtonHideUnderline(
-                            child: DropdownButton<SubstationModel>(
-                              value: selectedSubstation,
-                              isExpanded: true,
-                              icon: const Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: Color(0xFF0F2C59),
-                              ),
-                              items: NationalGridData.substations.map((sub) {
-                                return DropdownMenuItem<SubstationModel>(
-                                  value: sub,
-                                  child: Text(
-                                    '${sub.name} (${sub.region})',
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                            child: Builder(
+                              builder: (context) {
+                                final currentList =
+                                    NationalGridData.jizanSubstations;
+                                final currentSubstation = currentList.contains(selectedSubstation)
+                                    ? selectedSubstation
+                                    : (currentList.any((s) =>
+                                            s.name.trim().toLowerCase() ==
+                                            selectedSubstation.name.trim().toLowerCase())
+                                        ? currentList.firstWhere((s) =>
+                                            s.name.trim().toLowerCase() ==
+                                            selectedSubstation.name.trim().toLowerCase())
+                                        : currentList.first);
+                                return DropdownButton<SubstationModel>(
+                                  value: currentSubstation,
+                                  isExpanded: true,
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: Color(0xFF0F2C59),
                                   ),
+                                  items: currentList.map((sub) {
+                                    return DropdownMenuItem<SubstationModel>(
+                                      value: sub,
+                                      child: Text(
+                                        '${sub.name} (${sub.region})',
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (newSub) {
+                                    if (newSub != null) {
+                                      setDialogState(() {
+                                        selectedSubstation = newSub;
+                                        final currentUnits = <TransformerInfo>[
+                                          ...newSub.transformers,
+                                          ...newSub.auxTransformers,
+                                        ];
+                                        selectedEquipment =
+                                            currentUnits.isNotEmpty
+                                            ? currentUnits.first
+                                            : null;
+                                      });
+                                    }
+                                  },
                                 );
-                              }).toList(),
-                              onChanged: (newSub) {
-                                if (newSub != null) {
-                                  setDialogState(() {
-                                    selectedSubstation = newSub;
-                                    final currentUnits = <TransformerInfo>[
-                                      ...newSub.transformers,
-                                      ...newSub.auxTransformers,
-                                    ];
-                                    selectedEquipment = currentUnits.isNotEmpty
-                                        ? currentUnits.first
-                                        : null;
-                                  });
-                                }
                               },
                             ),
                           ),
@@ -991,9 +1047,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showStartChecklistDialog(BuildContext context, FormModel form) {
-    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
-      (s) => s.name == 'JIC',
-      orElse: () => NationalGridData.substations.first,
+    final availableSubstations = NationalGridData.jizanSubstations;
+    SubstationModel selectedSubstation = availableSubstations.firstWhere(
+      (s) => s.name.trim().toLowerCase() == 'jic',
+      orElse: () => availableSubstations.first,
     );
     String selectedDivision = selectedSubstation.division;
     String selectedDepartment = selectedSubstation.department;
@@ -1115,28 +1172,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ),
                                 ),
                                 child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<SubstationModel>(
-                                    value: selectedSubstation,
-                                    isExpanded: true,
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF0F766E)),
-                                    items: NationalGridData.substations.map((sub) {
-                                      return DropdownMenuItem<SubstationModel>(
-                                        value: sub,
-                                        child: Text(
-                                          '${sub.name} (${sub.transformers.length} محولات - ${sub.region})',
-                                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                  child: Builder(
+                                    builder: (context) {
+                                      final currentSubstation = availableSubstations.firstWhere(
+                                        (s) => s == selectedSubstation,
+                                        orElse: () => availableSubstations.first,
                                       );
-                                    }).toList(),
-                                    onChanged: (newSub) {
-                                      if (newSub != null) {
-                                        setDialogState(() {
-                                          selectedSubstation = newSub;
-                                          selectedDivision = newSub.division;
-                                          selectedDepartment = newSub.department;
-                                        });
-                                      }
+                                      return DropdownButton<SubstationModel>(
+                                        value: currentSubstation,
+                                        isExpanded: true,
+                                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF0F766E)),
+                                        items: availableSubstations.map((sub) {
+                                          return DropdownMenuItem<SubstationModel>(
+                                            value: sub,
+                                            child: Text(
+                                              '${sub.name} (${sub.transformers.length} محولات - ${sub.region})',
+                                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          );
+                                        }).toList(),
+                                        onChanged: (newSub) {
+                                          if (newSub != null) {
+                                            setDialogState(() {
+                                              selectedSubstation = newSub;
+                                              selectedDivision = newSub.division;
+                                              selectedDepartment = newSub.department;
+                                            });
+                                          }
+                                        },
+                                      );
                                     },
                                   ),
                                 ),
@@ -1357,9 +1422,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showStartOilSamplingDialog(BuildContext context, FormModel form) {
-    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
-      (s) => s.name == 'JIC',
-      orElse: () => NationalGridData.substations.first,
+    final availableSubstations = NationalGridData.jizanSubstations;
+    SubstationModel selectedSubstation = availableSubstations.firstWhere(
+      (s) => s.name.trim().toLowerCase() == 'jic',
+      orElse: () => availableSubstations.first,
     );
     final Set<String> selectedEquipmentNumbers = <String>{};
     bool showEquipmentError = false;
@@ -1485,27 +1551,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ),
                                 ),
                                 child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<SubstationModel>(
-                                    value: selectedSubstation,
-                                    isExpanded: true,
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFFD97706)),
-                                    items: NationalGridData.substations.map((sub) {
-                                      return DropdownMenuItem<SubstationModel>(
-                                        value: sub,
-                                        child: Text(
-                                          '${sub.name} (${sub.transformers.length} محولات - ${sub.region})',
-                                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                  child: Builder(
+                                    builder: (context) {
+                                      final currentSubstation = availableSubstations.firstWhere(
+                                        (s) => s == selectedSubstation,
+                                        orElse: () => availableSubstations.first,
                                       );
-                                    }).toList(),
-                                    onChanged: (newSub) {
-                                      if (newSub != null) {
-                                        setDialogState(() {
-                                          selectedSubstation = newSub;
-                                          selectedEquipmentNumbers.clear();
-                                        });
-                                      }
+                                      return DropdownButton<SubstationModel>(
+                                        value: currentSubstation,
+                                        isExpanded: true,
+                                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFFD97706)),
+                                        items: availableSubstations.map((sub) {
+                                          return DropdownMenuItem<SubstationModel>(
+                                            value: sub,
+                                            child: Text(
+                                              '${sub.name} (${sub.transformers.length} محولات - ${sub.region})',
+                                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          );
+                                        }).toList(),
+                                        onChanged: (newSub) {
+                                          if (newSub != null) {
+                                            setDialogState(() {
+                                              selectedSubstation = newSub;
+                                              selectedEquipmentNumbers.clear();
+                                            });
+                                          }
+                                        },
+                                      );
                                     },
                                   ),
                                 ),
@@ -1900,9 +1974,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showStartInspectionDialog(BuildContext context, FormModel form) {
-    SubstationModel selectedSubstation = NationalGridData.substations.firstWhere(
+    SubstationModel selectedSubstation = NationalGridData.jizanSubstations.firstWhere(
       (s) => s.name == 'JIC',
-      orElse: () => NationalGridData.substations.first,
+      orElse: () => NationalGridData.jizanSubstations.first,
     );
     final workOrderController = TextEditingController(text: '');
     String inspectionDate = DateFormat('yyyy/MM/dd').format(DateTime.now());
@@ -1998,26 +2072,47 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           child: DropdownButtonHideUnderline(
-                            child: DropdownButton<SubstationModel>(
-                              value: selectedSubstation,
-                              isExpanded: true,
-                              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF0284C7)),
-                              items: NationalGridData.substations.map((sub) {
-                                return DropdownMenuItem<SubstationModel>(
-                                  value: sub,
-                                  child: Text(
-                                    '${sub.name} (${sub.transformers.length} محولات - ${sub.region})',
-                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                                    overflow: TextOverflow.ellipsis,
+                            child: Builder(
+                              builder: (context) {
+                                final currentList =
+                                    NationalGridData.jizanSubstations;
+                                final currentSubstation = currentList.contains(selectedSubstation)
+                                    ? selectedSubstation
+                                    : (currentList.any((s) =>
+                                            s.name.trim().toLowerCase() ==
+                                            selectedSubstation.name.trim().toLowerCase())
+                                        ? currentList.firstWhere((s) =>
+                                            s.name.trim().toLowerCase() ==
+                                            selectedSubstation.name.trim().toLowerCase())
+                                        : currentList.first);
+                                return DropdownButton<SubstationModel>(
+                                  value: currentSubstation,
+                                  isExpanded: true,
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: Color(0xFF0284C7),
                                   ),
+                                  items: currentList.map((sub) {
+                                    return DropdownMenuItem<SubstationModel>(
+                                      value: sub,
+                                      child: Text(
+                                        '${sub.name} (${sub.transformers.length} محولات - ${sub.region})',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (newSub) {
+                                    if (newSub != null) {
+                                      setDialogState(() {
+                                        selectedSubstation = newSub;
+                                      });
+                                    }
+                                  },
                                 );
-                              }).toList(),
-                              onChanged: (newSub) {
-                                if (newSub != null) {
-                                  setDialogState(() {
-                                    selectedSubstation = newSub;
-                                  });
-                                }
                               },
                             ),
                           ),
@@ -3162,137 +3257,222 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final double titleFontSize = isCompact ? 13 : 16.5;
     final double categoryFontSize = isCompact ? 10 : 12;
     final double subtitleFontSize = isCompact ? 10 : 12;
+    final bool isEnabled = form.isEnabled;
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      elevation: isDark ? 2 : 1,
+      elevation: isEnabled ? (isDark ? 2 : 1) : 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: isDark
-              ? const Color(0xFF334155)
-              : const Color(0xFFE2E8F0),
+          color: isEnabled
+              ? (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0))
+              : (isDark ? const Color(0xFF334155).withValues(alpha: 0.5) : const Color(0xFFCBD5E1)),
           width: 1.2,
         ),
       ),
       child: InkWell(
-        onTap: () => _openForm(context, form),
-        borderRadius: BorderRadius.circular(16),
-        splashColor: form.primaryColor.withValues(alpha: 0.15),
-        highlightColor: form.primaryColor.withValues(alpha: 0.08),
-        child: Padding(
-          padding: EdgeInsets.all(cardPadding),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Top: Form Icon (Centered)
-              Center(
-                child: Container(
-                  width: iconSize,
-                  height: iconSize,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [form.primaryColor, form.secondaryColor],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: form.primaryColor.withValues(alpha: 0.3),
-                        blurRadius: 5,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    form.icon,
-                    color: Colors.white,
-                    size: iconInsideSize,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // Title and Category & Description
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Category & Time Row
-                    Row(
+        onTap: isEnabled
+            ? () => _openForm(context, form)
+            : () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
                       children: [
+                        const Icon(Icons.lock_clock_rounded, color: Colors.white, size: 20),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            form.category,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: categoryFontSize,
-                              fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? Colors.grey.shade400
-                                  : Colors.grey.shade600,
+                            'نموذج "${form.title}" غير متاح حالياً (قيد التحديث والتطوير).',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: const Color(0xFF1E293B),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              },
+        borderRadius: BorderRadius.circular(16),
+        splashColor: isEnabled ? form.primaryColor.withValues(alpha: 0.15) : Colors.transparent,
+        highlightColor: isEnabled ? form.primaryColor.withValues(alpha: 0.08) : Colors.transparent,
+        child: Opacity(
+          opacity: isEnabled ? 1.0 : 0.68,
+          child: Padding(
+            padding: EdgeInsets.all(cardPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Top: Form Icon (Centered)
+                Center(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: iconSize,
+                        height: iconSize,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: isEnabled
+                                ? [form.primaryColor, form.secondaryColor]
+                                : [
+                                    Colors.blueGrey.shade600,
+                                    Colors.blueGrey.shade700,
+                                  ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: isEnabled
+                              ? [
+                                  BoxShadow(
+                                    color: form.primaryColor.withValues(alpha: 0.3),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Icon(
+                          form.icon,
+                          color: Colors.white.withValues(alpha: isEnabled ? 1.0 : 0.75),
+                          size: iconInsideSize,
+                        ),
+                      ),
+                      if (!isEnabled)
+                        Positioned(
+                          right: -3,
+                          bottom: -3,
+                          child: Container(
+                            padding: const EdgeInsets.all(2.5),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.lock_rounded,
+                              size: 11,
+                              color: Color(0xFFE11D48),
                             ),
                           ),
                         ),
-                        if (!isCompact) ...[
-                          const SizedBox(width: 6),
-                          Icon(
-                            Icons.timer_outlined,
-                            size: 13,
-                            color: isDark
-                                ? Colors.grey.shade400
-                                : Colors.grey.shade600,
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Title and Category & Description
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Category & Time Row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              form.category,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: categoryFontSize,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.grey.shade400
+                                    : Colors.grey.shade600,
+                              ),
+                            ),
                           ),
-                          const SizedBox(width: 2),
-                          Text(
-                            form.estimatedTime,
-                            style: TextStyle(
-                              fontSize: 11,
+                          if (!isEnabled) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFFE11D48).withValues(alpha: 0.15)
+                                    : const Color(0xFFFFF1F2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFFE11D48).withValues(alpha: 0.4)
+                                      : const Color(0xFFFDA4AF),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: const Text(
+                                'غير متاح',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFE11D48),
+                                ),
+                              ),
+                            ),
+                          ] else if (!isCompact) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.timer_outlined,
+                              size: 13,
                               color: isDark
                                   ? Colors.grey.shade400
                                   : Colors.grey.shade600,
                             ),
-                          ),
+                            const SizedBox(width: 2),
+                            Text(
+                              form.estimatedTime,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark
+                                    ? Colors.grey.shade400
+                                    : Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      form.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: titleFontSize,
-                        fontWeight: FontWeight.bold,
-                        height: 1.25,
-                        letterSpacing: -0.2,
                       ),
-                    ),
-                    if (!isCompact) ...[
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
                       Text(
-                        form.subtitle,
+                        form.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: subtitleFontSize,
-                          color: isDark
-                              ? Colors.grey.shade400
-                              : Colors.grey.shade600,
-                          height: 1.2,
+                          fontSize: titleFontSize,
+                          fontWeight: FontWeight.bold,
+                          height: 1.25,
+                          letterSpacing: -0.2,
                         ),
                       ),
+                      if (!isCompact) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          form.subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: subtitleFontSize,
+                            color: isDark
+                                ? Colors.grey.shade400
+                                : Colors.grey.shade600,
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
